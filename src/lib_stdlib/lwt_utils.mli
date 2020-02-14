@@ -106,3 +106,6 @@ val fold_left_s_n :
     resolution of the promise, delaying the call [f ()].
 *)
 val dont_wait : (exn -> unit) -> (unit -> unit Lwt.t) -> unit
+
+(** Lwt version of [TzList.find_map] *)
+val find_map_s : ('a -> 'b option Lwt.t) -> 'a list -> 'b option Lwt.t

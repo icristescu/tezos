@@ -63,3 +63,9 @@ let dont_wait handler f =
   let open Lwt in
   let p = apply f () in
   on_failure p handler
+
+let rec find_map_s f = function
+  | [] ->
+      Lwt.return_none
+  | x :: l ->
+      Lwt.bind (f x) (function None -> find_map_s f l | r -> Lwt.return r)

@@ -193,3 +193,9 @@ let index_of ?(compare = Stdlib.compare) item list =
         if compare head item = 0 then Some index else find (index + 1) tail
   in
   find 0 list
+
+let rec find_map f = function
+  | [] ->
+      None
+  | x :: l -> (
+    match f x with None -> find_map f l | r -> r )

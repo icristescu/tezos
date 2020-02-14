@@ -91,3 +91,11 @@ val shuffle : 'a list -> 'a list
 
 (** Get the index of an element in a list. *)
 val index_of : ?compare:('a -> 'a -> int) -> 'a -> 'a list -> int option
+
+(** [find_map f l] applies [f] to the elements of [l] in order, and
+    returns the first result of the form [Some v], or [None] if none
+    exist.
+
+    Present in OCaml 4.10: this function can be removed once we catch
+    up. *)
+val find_map : ('a -> 'b option) -> 'a list -> 'b option
