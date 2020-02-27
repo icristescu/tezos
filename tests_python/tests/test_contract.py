@@ -254,7 +254,16 @@ class TestContracts:
          r'unexpected annotation'),
         # error message for the arity of the chain_id type
         ("chain_id_arity.tz",
-         r'primitive chain_id expects 0 arguments but is given 1')
+         r'primitive chain_id expects 0 arguments but is given 1'),
+        # error message for set update on non-comparable type
+        ("set_update_non_comparable.tz",
+         r'Type nat is not compatible with type list operation'),
+        # error message for DIP over the limit
+        ("big_dip.tz",
+         r'wrong stack type for instruction DIP'),
+        # error message for DROP over the limit
+        ("big_drop.tz",
+         r'int16 out of range'),
     ])
     def test_ill_typecheck(self, client: Client, contract, error_pattern):
         with utils.assert_run_failure(error_pattern):
