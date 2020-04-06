@@ -1113,10 +1113,7 @@ let rec step :
       unparse_ty ctxt param_type
       >>=? fun (unparsed_param_type, ctxt) ->
       let unparsed_param_type =
-        Script_ir_translator.add_field_annot
-          (Option.map ~f:(fun n -> Field_annot n) root_name)
-          None
-          unparsed_param_type
+        Script_ir_translator.add_field_annot root_name None unparsed_param_type
       in
       unparse_ty ctxt storage_type
       >>=? fun (unparsed_storage_type, ctxt) ->
@@ -1184,10 +1181,7 @@ let rec step :
       unparse_ty ctxt param_type
       >>=? fun (unparsed_param_type, ctxt) ->
       let unparsed_param_type =
-        Script_ir_translator.add_field_annot
-          (Option.map ~f:(fun n -> Field_annot n) root_name)
-          None
-          unparsed_param_type
+        Script_ir_translator.add_field_annot root_name None unparsed_param_type
       in
       unparse_ty ctxt storage_type
       >>=? fun (unparsed_storage_type, ctxt) ->
