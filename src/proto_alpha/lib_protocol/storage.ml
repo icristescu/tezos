@@ -365,8 +365,8 @@ module Big_map = struct
       let (`Hex index_key) = MBytes.to_hex (Raw_hashes.blake2b raw_key) in
       String.sub index_key 0 2 :: String.sub index_key 2 2
       :: String.sub index_key 4 2 :: String.sub index_key 6 2
-      :: String.sub index_key 8 2 :: String.sub index_key 10 2 :: Z.to_string c
-      :: l
+      :: String.sub index_key 8 2 :: String.sub index_key 10 2
+      :: Z'.to_string c :: l
 
     let of_path = function
       | []
@@ -379,7 +379,7 @@ module Big_map = struct
       | _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ ->
           None
       | [index1; index2; index3; index4; index5; index6; key] ->
-          let c = Z.of_string key in
+          let c = Z'.of_string key in
           let raw_key = Data_encoding.Binary.to_bytes_exn encoding c in
           let (`Hex index_key) = MBytes.to_hex (Raw_hashes.blake2b raw_key) in
           assert (Compare.String.(String.sub index_key 0 2 = index1)) ;
