@@ -1075,7 +1075,7 @@ let rec step :
           ctxt )
   | (Create_account, (manager, (delegate, (_delegatable, (credit, rest))))) ->
       Contract.fresh_contract_from_current_nonce ctxt
-      >>=? fun (ctxt, contract) ->
+      >>?= fun (ctxt, contract) ->
       (* store in optimized binary representation - as unparsed with [Optimized]. *)
       let manager_bytes =
         Data_encoding.Binary.to_bytes_exn
@@ -1151,7 +1151,7 @@ let rec step :
       else return (code, storage) )
       >>=? fun (code, storage) ->
       Contract.fresh_contract_from_current_nonce ctxt
-      >>=? fun (ctxt, contract) ->
+      >>?= fun (ctxt, contract) ->
       let operation =
         Origination
           {
@@ -1203,7 +1203,7 @@ let rec step :
       >>=? fun (storage, ctxt) ->
       let storage = Micheline.strip_locations storage in
       Contract.fresh_contract_from_current_nonce ctxt
-      >>=? fun (ctxt, contract) ->
+      >>?= fun (ctxt, contract) ->
       let operation =
         Origination
           {
@@ -1217,8 +1217,8 @@ let rec step :
               };
           }
       in
-      Lwt.return (fresh_internal_nonce ctxt)
-      >>=? fun (ctxt, nonce) ->
+      fresh_internal_nonce ctxt
+      >>?= fun (ctxt, nonce) ->
       logged_return
         ( ( ( Internal_operation
                 {source = step_constants.self; operation; nonce},
