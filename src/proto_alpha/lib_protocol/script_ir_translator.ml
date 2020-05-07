@@ -1903,16 +1903,17 @@ let rec parse_data :
     Script.node ->
     (a * context) tzresult Lwt.t =
  fun ?type_logger ctxt ~legacy ty script_data ->
-  Lwt.return (Gas.consume ctxt Typecheck_costs.cycle)
-  >>=? fun ctxt ->
-  let error () =
-    Lwt.return
-      ( serialize_ty_for_error ctxt ty
-      >|? fun (ty, _ctxt) ->
-      Invalid_constant (location script_data, strip_locations script_data, ty)
-      )
+  Gas.consume ctxt Typecheck_costs.cycle
+  >>?= fun ctxt ->
+  let parse_data_error () =
+    serialize_ty_for_error ctxt ty
+    >|? fun (ty, _ctxt) ->
+    Invalid_constant (location script_data, strip_locations script_data, ty)
   in
-  let traced body = trace_eval error body in
+  let fail_parse_data () = parse_data_error () >>?= fail in
+  let traced body =
+    trace_eval (fun () -> Lwt.return @@ parse_data_error ()) body
+  in
   let parse_items ?type_logger ctxt expr key_type value_type items item_wrapper
       =
     let length = List.length items in
@@ -1944,7 +1945,7 @@ let rec parse_data :
         | Prim (loc, name, _, _) ->
             fail @@ Invalid_primitive (loc, [D_Elt], name)
         | Int _ | String _ | Bytes _ | Seq _ ->
-            error () >>=? fail)
+            fail_parse_data ())
       (None, empty_map key_type, ctxt)
       items
     |> traced
@@ -1990,7 +1991,7 @@ let rec parse_data :
               false
       in
       if check_printable_ascii (String.length v - 1) then return (v, ctxt)
-      else error () >>=? fail
+      else fail_parse_data ()
   | (String_t _, expr) ->
       traced (fail (Invalid_kind (location expr, [String_kind], kind expr)))
   (* Byte sequences *)
@@ -2009,7 +2010,7 @@ let rec parse_data :
       let v = Script_int.of_zint v in
       if Compare.Int.(Script_int.compare v Script_int.zero >= 0) then
         return (Script_int.abs v, ctxt)
-      else error () >>=? fail
+      else fail_parse_data ()
   | (Int_t _, expr) ->
       traced (fail (Invalid_kind (location expr, [Int_kind], kind expr)))
   | (Nat_t _, expr) ->
@@ -2027,7 +2028,7 @@ let rec parse_data :
             raise Exit
         | Some tez ->
             return (tez, ctxt)
-      with _ -> error () >>=? fail )
+      with _ -> fail_parse_data () )
   | (Mutez_t _, expr) ->
       traced (fail (Invalid_kind (location expr, [Int_kind], kind expr)))
   (* Timestamps *)
@@ -2042,7 +2043,7 @@ let rec parse_data :
       | Some v ->
           return (v, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Timestamp_t _, expr) ->
       traced
         (fail
@@ -2058,7 +2059,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Key_t _, String (_, s)) -> (
       (* As unparsed with [Readable]. *)
       Lwt.return (Gas.consume ctxt Typecheck_costs.key)
@@ -2067,7 +2068,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Key_t _, expr) ->
       traced
         (fail
@@ -2082,7 +2083,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Key_hash_t _, String (_, s)) (* As unparsed with [Readable]. *) -> (
       Lwt.return (Gas.consume ctxt Typecheck_costs.key_hash)
       >>=? fun ctxt ->
@@ -2090,7 +2091,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Key_hash_t _, expr) ->
       traced
         (fail
@@ -2103,7 +2104,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Signature_t _, String (_, s)) (* As unparsed with [Readable]. *) -> (
       Lwt.return (Gas.consume ctxt Typecheck_costs.signature)
       >>=? fun ctxt ->
@@ -2111,7 +2112,7 @@ let rec parse_data :
       | Some s ->
           return (s, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Signature_t _, expr) ->
       traced
         (fail
@@ -2129,7 +2130,7 @@ let rec parse_data :
       | Some k ->
           return (k, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Chain_id_t _, String (_, s)) -> (
       Lwt.return (Gas.consume ctxt Typecheck_costs.chain_id)
       >>=? fun ctxt ->
@@ -2137,7 +2138,7 @@ let rec parse_data :
       | Some s ->
           return (s, ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Chain_id_t _, expr) ->
       traced
         (fail
@@ -2155,17 +2156,17 @@ let rec parse_data :
           Lwt.return
           @@
           if Compare.Int.(String.length entrypoint > 31) then
-            Error_monad.error (Entrypoint_name_too_long entrypoint)
+            error (Entrypoint_name_too_long entrypoint)
           else
             match entrypoint with
             | "" ->
                 ok ((c, "default"), ctxt)
             | "default" ->
-                Error_monad.error (Unexpected_annotation loc)
+                error (Unexpected_annotation loc)
             | name ->
                 ok ((c, name), ctxt) )
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Address_t _, String (loc, s)) (* As unparsed with [Readable]. *) ->
       Lwt.return (Gas.consume ctxt Typecheck_costs.contract)
       >>=? fun ctxt ->
@@ -2192,34 +2193,32 @@ let rec parse_data :
   (* Contracts *)
   | (Contract_t (ty, _), Bytes (loc, bytes))
   (* As unparsed with [Optimized]. *) -> (
-      Lwt.return (Gas.consume ctxt Typecheck_costs.contract)
-      >>=? fun ctxt ->
+      Gas.consume ctxt Typecheck_costs.contract
+      >>?= fun ctxt ->
       match
         Data_encoding.Binary.of_bytes
           Data_encoding.(tup2 Contract.encoding Variable.string)
           bytes
       with
       | Some (c, entrypoint) ->
-          ( Lwt.return
-          @@
-          if Compare.Int.(String.length entrypoint > 31) then
-            Error_monad.error (Entrypoint_name_too_long entrypoint)
+          ( if Compare.Int.(String.length entrypoint > 31) then
+            error (Entrypoint_name_too_long entrypoint)
           else
             match entrypoint with
             | "" ->
                 ok "default"
             | "default" ->
-                Error_monad.error (Unexpected_annotation loc)
+                error (Unexpected_annotation loc)
             | name ->
                 ok name )
-          >>=? fun entrypoint ->
+          >>?= fun entrypoint ->
           traced (parse_contract ~legacy ctxt loc ty c ~entrypoint)
           >|=? fun (ctxt, _) -> ((ty, (c, entrypoint)), ctxt)
       | None ->
-          error () >>=? fail )
+          fail_parse_data () )
   | (Contract_t (ty, _), String (loc, s)) (* As unparsed with [Readable]. *) ->
-      Lwt.return (Gas.consume ctxt Typecheck_costs.contract)
-      >>=? fun ctxt ->
+      Gas.consume ctxt Typecheck_costs.contract
+      >>?= fun ctxt ->
       ( match String.index_opt s '%' with
       | None ->
           return (s, "default")
@@ -4529,40 +4528,38 @@ and parse_contract :
       trace (Invalid_contract (loc, contract))
       @@ Contract.get_script_code ctxt contract
       >>=? fun (ctxt, code) ->
+      Lwt.return
+      @@
       match code with
-      | None ->
-          Lwt.return
-            ( ty_eq ctxt loc arg (Unit_t None)
-            >>? fun (Eq, ctxt) ->
-            match entrypoint with
-            | "default" ->
-                let contract : arg typed_contract =
-                  (arg, (contract, entrypoint))
-                in
-                ok (ctxt, contract)
-            | entrypoint ->
-                error (No_such_entrypoint entrypoint) )
+      | None -> (
+          ty_eq ctxt loc arg (Unit_t None)
+          >>? fun (Eq, ctxt) ->
+          match entrypoint with
+          | "default" ->
+              let contract : arg typed_contract =
+                (arg, (contract, entrypoint))
+              in
+              ok (ctxt, contract)
+          | entrypoint ->
+              error (No_such_entrypoint entrypoint) )
       | Some code ->
           Script.force_decode_in_context ctxt code
-          >>?= fun (code, ctxt) ->
-          Lwt.return
-            ( parse_toplevel ~legacy:true code
-            >>? fun (arg_type, _, _, root_name) ->
-            parse_parameter_ty ctxt ~legacy:true arg_type
-            >>? fun (Ex_ty targ, ctxt) ->
-            find_entrypoint_for_type
-              ~legacy
-              ~full:targ
-              ~expected:arg
-              ~root_name
-              entrypoint
-              ctxt
-              loc
-            >|? fun (ctxt, entrypoint, arg) ->
-            let contract : arg typed_contract =
-              (arg, (contract, entrypoint))
-            in
-            (ctxt, contract) ) )
+          >>? fun (code, ctxt) ->
+          parse_toplevel ~legacy:true code
+          >>? fun (arg_type, _, _, root_name) ->
+          parse_parameter_ty ctxt ~legacy:true arg_type
+          >>? fun (Ex_ty targ, ctxt) ->
+          find_entrypoint_for_type
+            ~legacy
+            ~full:targ
+            ~expected:arg
+            ~root_name
+            entrypoint
+            ctxt
+            loc
+          >|? fun (ctxt, entrypoint, arg) ->
+          let contract : arg typed_contract = (arg, (contract, entrypoint)) in
+          (ctxt, contract) )
 
 (* Same as the one above, but does not fail when the contact is missing or
    if the expected type doesn't match the actual one. In that case None is
