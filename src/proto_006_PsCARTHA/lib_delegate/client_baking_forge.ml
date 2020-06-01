@@ -994,19 +994,20 @@ let bake ~user_activated_upgrades (cctxt : #Protocol_client_context.full)
                 -% a errs_tag errs)
           >>= fun () -> return_unit
       | Ok block_hash ->
+          let int32_level_tag =
+            Tag.def ~doc:"Level" "level" (fun fmt i ->
+                Format.fprintf fmt "%ld" i)
+          in
           lwt_log_notice
             Tag.DSL.(
               fun f ->
-                f
-                  "Injected block %a for %s after %a (level %a, priority %d, \
-                   fitness %a, operations %a)."
+                f "injected %a (%a, prio=%d) after %a (%a), operations %a)."
                 -% t event "injected_block"
                 -% a Block_hash.Logging.tag block_hash
-                -% s Client_keys.Logging.tag name
-                -% a Block_hash.Logging.tag shell_header.predecessor
-                -% a level_tag level
+                -% a int32_level_tag shell_header.level
                 -% s bake_priority_tag priority
-                -% a fitness_tag shell_header.fitness
+                -% a Block_hash.Logging.tag info.hash
+                -% a level_tag info.level
                 -% a operations_tag operations)
           >>= fun () ->
           ( if seed_nonce_hash <> None then
@@ -1201,15 +1202,10 @@ let create (cctxt : #Protocol_client_context.full) ~user_activated_upgrades
   in
   let event_k _cctxt state new_head =
     state.best_slot <- Some new_head ;
-    return_unit
+    bake cctxt ~user_activated_upgrades ~chain state >>=? fun () -> return_unit
   in
-  let compute_timeout _state = Lwt.return_unit in
-  let timeout_k cctxt state () =
-    bake cctxt ~user_activated_upgrades ~chain state
-    >>=? fun () ->
-    (* Stopping the timeout and waiting for the next block *)
-    return_unit
-  in
+  let compute_timeout _state = Lwt_utils.never_ending () in
+  let timeout_k _cctxt _state () = return_unit in
   Client_baking_scheduling.main
     ~name:"baker"
     ~cctxt
