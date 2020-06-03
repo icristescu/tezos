@@ -85,7 +85,15 @@ let create_state ?(minimal_fees = default_minimal_fees)
   Lwt_unix.openfile block_file [Unix.O_RDONLY] 0o644
   >>= fun fd ->
   let get_next_block () =
-    Block_repr.read_next_block fd >>= fun (block, _) -> Lwt.return block
+    Lwt.catch
+      (fun () ->
+        Block_repr.read_next_block fd >>= fun (block, _) -> Lwt.return block)
+      (function
+        | End_of_file ->
+            Format.printf "No more blocks to read, exiting...@." ;
+            exit 0
+        | exn ->
+            Lwt.fail exn)
   in
   Lwt.return
   {
