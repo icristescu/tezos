@@ -280,7 +280,7 @@ let apply_block bvp ~predecessor block_header operations =
     block_hash
     operations
   >>=? fun () ->
-  match bvp with
+  ( match bvp with
   | Sequential vp ->
       Seq_validator.apply_block
         vp
@@ -304,7 +304,15 @@ let apply_block bvp ~predecessor block_header operations =
       External_validator.send_request
         vp
         request
-        Block_validation.result_encoding
+        Block_validation.result_encoding )
+  >>=? fun result ->
+  Format.printf
+    "Block_hash %a -> context_hash %a@."
+    Block_hash.pp
+    (Block_header.hash block_header)
+    Context_hash.pp
+    result.validation_store.context_hash ;
+  return result
 
 let commit_genesis bvp ~chain_id =
   match bvp with
