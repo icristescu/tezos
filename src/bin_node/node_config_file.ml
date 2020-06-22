@@ -340,7 +340,7 @@ and shell = {
   prevalidator_limits : Prevalidator.limits;
   peer_validator_limits : Peer_validator.limits;
   chain_validator_limits : Chain_validator.limits;
-  history_mode : History_mode.t option;
+  history_mode : History_mode.Legacy.t option;
 }
 
 let default_p2p_limits : P2p.limits =
@@ -982,7 +982,7 @@ let shell =
           "chain_validator"
           chain_validator_limits_encoding
           default_shell.chain_validator_limits)
-       (opt "history_mode" History_mode.encoding))
+       (opt "history_mode" History_mode.Legacy.encoding))
 
 let encoding =
   let open Data_encoding in

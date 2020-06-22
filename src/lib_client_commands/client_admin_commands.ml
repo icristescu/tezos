@@ -94,7 +94,7 @@ let commands () =
            Caboose level: %ld@]"
           (Block_header.to_b58check block_header)
           block_header.shell.level
-          History_mode.pp
+          History_mode.Legacy.pp
           history_mode
           save_point
           caboose
