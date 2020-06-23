@@ -382,3 +382,47 @@ let with_atomic_open_out ?(overwrite = true) ?temp_dir filename f =
           Lwt.return (Error {action = `Rename; unix_code; caller; arg})
       | exn ->
           raise exn)
+
+let display_progress ?(every = 1) ?(out = Lwt_unix.stdout) ~pp_print_step f =
+  (* pp_print_step must only write on a single-line with no carriage return *)
+  Lwt_unix.isatty out
+  >>= fun is_a_tty ->
+  if not is_a_tty then f (fun () -> Lwt.return_unit)
+  else
+    let clear_line fmt = Format.fprintf fmt "\027[2K\r" in
+    let (stream, notifier) = Lwt_stream.create () in
+    let wrapped_notifier () = notifier (Some ()) ; Lwt_unix.yield () in
+    let thread =
+      Lwt.finalize
+        (fun () -> f wrapped_notifier)
+        (fun () -> notifier None ; Lwt.return_unit)
+    in
+    let oc = Unix.out_channel_of_descr (Lwt_unix.unix_file_descr out) in
+    let fmt = Format.formatter_of_out_channel oc in
+    let cpt = ref 0 in
+    let pp_cpt = ref 0 in
+    let rec loop () = Lwt_unix.sleep 1. >>= fun () -> incr pp_cpt ; loop () in
+    let loop = loop () in
+    let dots () = String.init (!pp_cpt mod 4) (fun _ -> '.') in
+    let pp () =
+      clear_line fmt ;
+      Format.fprintf fmt "%a%s%!" pp_print_step !cpt (dots ())
+    in
+    let pp_done () =
+      clear_line fmt ;
+      Format.fprintf fmt "%a Done@\n%!" pp_print_step !cpt
+    in
+    pp () ;
+    incr cpt ;
+    let printer =
+      Lwt_stream.iter_s
+        (fun () ->
+          ( if !cpt mod every = 0 then (pp () ; Lwt.return_unit)
+          else Lwt.return_unit )
+          >>= fun () -> incr cpt ; Lwt.return_unit)
+        stream
+    in
+    thread
+    >>= fun e ->
+    Lwt.cancel loop ;
+    printer >>= fun () -> decr cpt ; pp_done () ; Lwt.return e

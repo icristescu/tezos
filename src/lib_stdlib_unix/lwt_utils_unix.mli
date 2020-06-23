@@ -193,3 +193,22 @@ val with_open_in :
   string ->
   (Lwt_unix.file_descr -> 'a Lwt.t) ->
   ('a, [`Open | `Close] io_error) result Lwt.t
+
+(** [display_progress ?every ?out ~pp_print_step f] calls
+    [pp_print_step] when the first argument of [f] is called and
+    increment the number of step which will be given to
+    [pp_print_step].
+
+    If [every] is passed, it is instead displayed whenever [nb_step
+    mod every = 0] (defaults to 1). Each time [pp_print_step] is
+    called, the previous output will be erased and replaced by the new
+    output.
+
+    [pp_print_step] must only write on a single-line with no carriage
+    return. *)
+val display_progress :
+  ?every:int ->
+  ?out:Lwt_unix.file_descr ->
+  pp_print_step:(Format.formatter -> int -> unit) ->
+  ((unit -> unit Lwt.t) -> 'a Lwt.t) ->
+  'a Lwt.t
