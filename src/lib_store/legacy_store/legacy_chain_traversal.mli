@@ -23,43 +23,47 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-let build_rpc_directory block_validator store =
-  let dir : unit RPC_directory.t ref = ref RPC_directory.empty in
-  let gen_register0 s f =
-    dir := RPC_directory.gen_register !dir s (fun () p q -> f p q)
-  in
-  let register1 s f =
-    dir := RPC_directory.register !dir s (fun ((), a) p q -> f a p q)
-  in
-  gen_register0 Protocol_services.S.list (fun () () ->
-      let set = Store.Protocol.all store in
-      let protocols =
-        Protocol_hash.Set.add_seq (Registered_protocol.seq_embedded ()) set
-      in
-      RPC_answer.return (Protocol_hash.Set.elements protocols)) ;
-  register1 Protocol_services.S.contents (fun hash () () ->
-      match Registered_protocol.get_embedded_sources hash with
-      | Some p ->
-          return p
-      | None -> (
-          Store.Protocol.read store hash
-          >>= function
-          | None ->
-              Lwt.return (Error_monad.error_exn Not_found)
-          | Some p ->
-              return p )) ;
-  register1 Protocol_services.S.environment (fun hash () () ->
-      match Registered_protocol.get_embedded_sources hash with
-      | Some p ->
-          return p.expected_env
-      | None -> (
-          Store.Protocol.read store hash
-          >>= function
-          | None ->
-              Lwt.return (Error_monad.error_exn Not_found)
-          | Some p ->
-              return p.expected_env )) ;
-  register1 Protocol_services.S.fetch (fun hash () () ->
-      Block_validator.fetch_and_compile_protocol block_validator hash
-      >>=? fun _proto -> return_unit) ;
-  !dir
+(** Tezos Shell Module - Chain Traversal API *)
+
+open Legacy_state
+
+(** If [h1] is an ancestor of [h2] in the current [state],
+    then [path state h1 h2] returns the chain of block from
+    [h1] (excluded) to [h2] (included). Returns [None] otherwise. *)
+val path : Block.t -> Block.t -> Block.t list option Lwt.t
+
+(** [common_ancestor state h1 h2] returns the first common ancestors
+    in the history of blocks [h1] and [h2]. *)
+val common_ancestor : Block.t -> Block.t -> Block.t Lwt.t
+
+(** [iter_predecessors state blocks f] iter [f] on [blocks] and
+    their recursive predecessors. Blocks are visited with a
+    decreasing fitness (then decreasing timestamp). If the optional
+    argument [max] is provided, the iteration is stopped after [max]
+    visited block. If [min_fitness] id provided, blocks with a
+    fitness lower than [min_fitness] are ignored. If [min_date],
+    blocks with a fitness lower than [min_date] are ignored. *)
+val iter_predecessors :
+  ?max:int ->
+  ?min_fitness:Fitness.t ->
+  ?min_date:Time.Protocol.t ->
+  Block.t list ->
+  f:(Block.t -> unit Lwt.t) ->
+  unit Lwt.t
+
+(** [new_blocks ~from_block ~to_block] returns a pair [(ancestor,
+    path)], where [ancestor] is the common ancestor of [from_block]
+    and [to_block] and where [path] is the chain from [ancestor]
+    (excluded) to [to_block] (included).  The function raises an
+    exception when the two provided blocks do not belong to the same
+    [chain].  *)
+val new_blocks :
+  from_block:Block.t -> to_block:Block.t -> (Block.t * Block.t list) Lwt.t
+
+(** [live_blocks b n] return a pair [(blocks,operations)] where
+    [blocks] is the set of arity [n], that contains [b] and its [n-1]
+    predecessors. And where [operations] is the set of operations
+    included in those blocks.
+*)
+val live_blocks :
+  Block.t -> int -> (Block_hash.Set.t * Operation_hash.Set.t) tzresult Lwt.t

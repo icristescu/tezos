@@ -72,7 +72,7 @@ type error += Data_dir_needs_upgrade of {expected : t; actual : t}
 let () =
   register_error_kind
     `Permanent
-    ~id:"main.data_version.invalid_data_dir"
+    ~id:"invalidDataDir"
     ~title:"Invalid data directory"
     ~description:"The data directory cannot be accessed or created"
     ~pp:(fun ppf path ->

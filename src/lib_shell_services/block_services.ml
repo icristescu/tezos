@@ -99,11 +99,11 @@ let parse_block s =
         Ok (`Alias (`Checkpoint, int_of_string n))
     | (["checkpoint"; n], '+') ->
         Ok (`Alias (`Checkpoint, -int_of_string n))
-    | (["save_point"], _) ->
+    | (["savepoint"], _) ->
         Ok (`Alias (`Savepoint, 0))
-    | (["save_point"; n], '~') | (["save_point"; n], '-') ->
+    | (["savepoint"; n], '~') | (["savepoint"; n], '-') ->
         Ok (`Alias (`Savepoint, int_of_string n))
-    | (["save_point"; n], '+') ->
+    | (["savepoint"; n], '+') ->
         Ok (`Alias (`Savepoint, -int_of_string n))
     | (["caboose"], _) ->
         Ok (`Alias (`Caboose, 0))
@@ -132,7 +132,7 @@ let alias_to_string = function
   | `Checkpoint ->
       "checkpoint"
   | `Savepoint ->
-      "save_point"
+      "savepoint"
   | `Caboose ->
       "caboose"
 

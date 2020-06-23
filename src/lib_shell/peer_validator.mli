@@ -37,7 +37,7 @@ type limits = {
 val peer_id : t -> P2p_peer.Id.t
 
 val create :
-  ?notify_new_block:(State.Block.t -> unit) ->
+  ?notify_new_block:(Store.Block.t -> unit) ->
   ?notify_termination:(unit -> unit) ->
   limits ->
   Block_validator.t ->

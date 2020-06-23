@@ -53,16 +53,16 @@ val create :
   Peer_validator.limits ->
   Prevalidator.limits ->
   Block_validator.t ->
-  State.Block.t Lwt_watcher.input ->
+  Store.Block.t Lwt_watcher.input ->
   (Chain_id.t * bool) Lwt_watcher.input ->
   Distributed_db.t ->
-  State.Chain.t ->
+  Store.chain_store ->
   limits ->
   t tzresult Lwt.t
 
 val chain_id : t -> Chain_id.t
 
-val chain_state : t -> State.Chain.t
+val chain_store : t -> Store.chain_store
 
 val sync_status : t -> Synchronisation_heuristic.status
 
@@ -92,9 +92,9 @@ val validate_block :
 
 val shutdown : t -> unit Lwt.t
 
-val valid_block_watcher : t -> State.Block.t Lwt_stream.t * Lwt_watcher.stopper
+val valid_block_watcher : t -> Store.Block.t Lwt_stream.t * Lwt_watcher.stopper
 
-val new_head_watcher : t -> State.Block.t Lwt_stream.t * Lwt_watcher.stopper
+val new_head_watcher : t -> Store.Block.t Lwt_stream.t * Lwt_watcher.stopper
 
 val running_workers : unit -> (Chain_id.t * t) list
 

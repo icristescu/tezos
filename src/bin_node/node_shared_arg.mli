@@ -47,7 +47,7 @@ type t = {
   rpc_tls : Node_config_file.tls option;
   log_output : Lwt_log_sink_unix.Output.t option;
   bootstrap_threshold : int option;
-  history_mode : History_mode.Legacy.t option;
+  history_mode : History_mode.t option;
   synchronisation_threshold : int option;
   latency : int option;
 }
@@ -59,6 +59,8 @@ module Term : sig
 
   val config_file : string option Cmdliner.Term.t
 end
+
+val read_config_file : t -> Node_config_file.t tzresult Lwt.t
 
 val read_data_dir : t -> string tzresult Lwt.t
 

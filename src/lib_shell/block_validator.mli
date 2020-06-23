@@ -93,7 +93,7 @@ val validate :
   t ->
   ?canceler:Lwt_canceler.t ->
   ?peer:P2p_peer.Id.t ->
-  ?notify_new_block:(State.Block.t -> unit) ->
+  ?notify_new_block:(Store.Block.t -> unit) ->
   Distributed_db.chain_db ->
   Block_hash.t ->
   Block_header.t ->
