@@ -23,7 +23,7 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-module Local = Tezos_storage_memory.Context
+module Local = Tezos_context_memory.Context
 
 module Events = struct
   include Internal_event.Simple

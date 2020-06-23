@@ -24,7 +24,7 @@
 (*****************************************************************************)
 
 module M = struct
-  include Tezos_storage_memory.Context
+  include Tezos_context_memory.Context
 
   let set_protocol = add_protocol
 

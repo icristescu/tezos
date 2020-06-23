@@ -23,7 +23,7 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-open Tezos_storage_encoding.Context
+open Tezos_context_encoding.Context
 
 module type DB =
   Irmin.S

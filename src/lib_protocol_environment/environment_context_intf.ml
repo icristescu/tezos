@@ -26,12 +26,12 @@
 
 module type VIEW = sig
   (** @inline *)
-  include Tezos_storage_sigs.Context.VIEW
+  include Tezos_context_sigs.Context.VIEW
 end
 
 module type TREE = sig
   (** @inline *)
-  include Tezos_storage_sigs.Context.TREE
+  include Tezos_context_sigs.Context.TREE
 end
 
 module type S = sig

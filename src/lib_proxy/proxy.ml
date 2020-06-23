@@ -30,7 +30,7 @@
     it would create a cyclic dependency between proxy_proto.ml
     and proxy_getter.ml *)
 
-module Local = Tezos_storage_memory.Context
+module Local = Tezos_context_memory.Context
 
 type proxy_getter_input = {
   rpc_context : RPC_context.simple;

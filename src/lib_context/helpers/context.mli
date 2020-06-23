@@ -23,7 +23,7 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-open Tezos_storage_encoding.Context
+open Tezos_context_encoding.Context
 
 module type DB =
   Irmin.S
@@ -37,7 +37,7 @@ module type DB =
 
 module Make_tree (DB : DB) : sig
   include
-    Tezos_storage_sigs.Context.TREE
+    Tezos_context_sigs.Context.TREE
       with type t := DB.t
        and type key := DB.key
        and type value := DB.contents
