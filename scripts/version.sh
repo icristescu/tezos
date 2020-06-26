@@ -13,8 +13,8 @@ recommended_rust_version=1.44.0
 full_opam_repository_tag=7a8c3abfbac416d1e4cd10827642a970da6b0b6f
 
 ## opam_repository is an additional, tezos-specific opam repository.
-opam_repository_tag=552c0009110429e5adfd093122ce4eaf6c8b10c2
-opam_repository_url=https://gitlab.com/tezos/opam-repository.git
+opam_repository_tag=17184bfea435a9c8164c16a20ad2b9deebc93477
+opam_repository_url=https://gitlab.com/nomadic-labs/opam-repository.git
 opam_repository=$opam_repository_url\#$opam_repository_tag
 
 ## Other variables, used both in Makefile and scripts

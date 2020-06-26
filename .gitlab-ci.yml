@@ -16,8 +16,8 @@ include:
 
 variables:
   ## Please update `scripts/version.sh` accordingly
-  build_deps_image_version: 552c0009110429e5adfd093122ce4eaf6c8b10c2
-  build_deps_image_name: registry.gitlab.com/tezos/opam-repository
+  build_deps_image_version: 17184bfea435a9c8164c16a20ad2b9deebc93477
+  build_deps_image_name: registry.gitlab.com/nomadic-labs/opam-repository
   public_docker_image_name: docker.io/${CI_PROJECT_PATH}
   GIT_STRATEGY: fetch
   GIT_DEPTH: "1"
