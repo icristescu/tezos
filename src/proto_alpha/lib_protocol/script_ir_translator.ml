@@ -1321,7 +1321,8 @@ let rec parse_comparable_ty :
         | T_lambda
         | T_unit
         | T_signature
-        | T_contract ),
+        | T_contract
+        | T_operation ),
         _,
         _ ) ->
       error (Comparable_type_expected (loc, Micheline.strip_locations ty))
@@ -1569,7 +1570,8 @@ and parse_ty :
           | T_key_hash
           | T_timestamp
           | T_address
-          | T_chain_id ) as prim ),
+          | T_chain_id
+          | T_operation ) as prim ),
         l,
         _ ) ->
       error (Invalid_arity (loc, prim, 0, List.length l))
@@ -4197,7 +4199,6 @@ and parse_instr :
             | I_SLICE
             | I_MEM
             | I_UPDATE
-            | I_MAP
             | I_GET
             | I_EXEC
             | I_FAILWITH
@@ -4235,8 +4236,13 @@ and parse_instr :
             | I_BLAKE2B
             | I_SHA256
             | I_SHA512
-            | I_STEPS_TO_QUOTA
-            | I_ADDRESS ) as name ),
+            | I_ADDRESS
+            | I_RENAME
+            | I_PACK
+            | I_ISNAT
+            | I_INT
+            | I_SELF
+            | I_CHAIN_ID ) as name ),
           (_ :: _ as l),
           _ ),
       _ ) ->
@@ -4252,7 +4258,10 @@ and parse_instr :
             | I_EMPTY_SET
             | I_LOOP
             | I_LOOP_LEFT
-            | I_CONTRACT ) as name ),
+            | I_CONTRACT
+            | I_CAST
+            | I_UNPACK
+            | I_CREATE_CONTRACT ) as name ),
           (([] | _ :: _ :: _) as l),
           _ ),
       _ ) ->
@@ -4270,7 +4279,9 @@ and parse_instr :
           _ ),
       _ ) ->
       fail (Invalid_arity (loc, name, 2, List.length l))
-  | (Prim (loc, I_LAMBDA, (([] | [_] | _ :: _ :: _ :: _ :: _) as l), _), _) ->
+  | ( Prim
+        (loc, I_LAMBDA, (([] | [_] | [_; _] | _ :: _ :: _ :: _ :: _) as l), _),
+      _ ) ->
       fail (Invalid_arity (loc, I_LAMBDA, 3, List.length l))
   (* Stack errors *)
   | ( Prim
@@ -4283,7 +4294,8 @@ and parse_instr :
             | I_OR
             | I_XOR
             | I_LSL
-            | I_LSR ) as name ),
+            | I_LSR
+            | I_CONCAT ) as name ),
           [],
           _ ),
       Item_t (ta, Item_t (tb, _, _), _) ) ->
@@ -4296,14 +4308,16 @@ and parse_instr :
           ( ( I_NEG
             | I_ABS
             | I_NOT
-            | I_CONCAT
             | I_SIZE
             | I_EQ
             | I_NEQ
             | I_LT
             | I_GT
             | I_LE
-            | I_GE ) as name ),
+            | I_GE
+            (* CONCAT is both unary and binary; this case can only be triggered
+               on a singleton stack *)
+            | I_CONCAT ) as name ),
           [],
           _ ),
       Item_t (t, _, _) ) ->
@@ -4353,7 +4367,20 @@ and parse_instr :
             | I_LT
             | I_GT
             | I_LE
-            | I_GE ) as name ),
+            | I_GE
+            | I_SIZE
+            | I_FAILWITH
+            | I_RENAME
+            | I_PACK
+            | I_ISNAT
+            | I_ADDRESS
+            | I_SET_DELEGATE
+            | I_CAST
+            | I_MAP
+            | I_ITER
+            | I_LOOP_LEFT
+            | I_UNPACK
+            | I_CONTRACT ) as name ),
           _,
           _ ),
       stack ) ->
@@ -4376,7 +4403,8 @@ and parse_instr :
             | I_OR
             | I_XOR
             | I_LSL
-            | I_LSR ) as name ),
+            | I_LSR
+            | I_COMPARE ) as name ),
           _,
           _ ),
       stack ) ->
