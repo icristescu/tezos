@@ -116,6 +116,7 @@ in the :ref:`introduction <howtoget>`.
 
    shell/the_big_picture
    shell/validation
+   shell/storage
    shell/sync
    shell/p2p
    shell/p2p_api
