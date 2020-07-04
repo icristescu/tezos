@@ -130,9 +130,13 @@ module Node = struct
 
     type entry = {kind : kind; name : M.step; node : Hash.t}
 
+    let s = Irmin.Type.(string_of `Int64)
+
+    let pre_hash_v = Irmin.Type.(unstage (pre_hash s))
+
     (* Irmin 1.4 uses int64 to store string lengths *)
     let step_t =
-      let pre_hash = Irmin.Type.(pre_hash (string_of `Int64)) in
+      let pre_hash = Irmin.Type.(stage @@ fun x -> pre_hash_v x) in
       Irmin.Type.like M.step_t ~pre_hash
 
     let metadata_t =
@@ -176,14 +180,16 @@ module Node = struct
 
     let import t = List.map import_entry (M.list t)
 
-    let pre_hash entries = Irmin.Type.pre_hash entries_t entries
+    let pre_hash_entries = Irmin.Type.(unstage (pre_hash entries_t))
+
+    let pre_hash entries = pre_hash_entries entries
   end
 
   include M
 
   let pre_hash_v1 x = V1.pre_hash (V1.import x)
 
-  let t = Irmin.Type.(like t ~pre_hash:pre_hash_v1)
+  let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
 end
 
 module Commit = struct
@@ -191,19 +197,23 @@ module Commit = struct
   module V1 = Irmin.Private.Commit.V1 (M)
   include M
 
-  let pre_hash_v1 t = Irmin.Type.pre_hash V1.t (V1.import t)
+  let pre_hash_v1_t = Irmin.Type.(unstage (pre_hash V1.t))
 
-  let t = Irmin.Type.like t ~pre_hash:pre_hash_v1
+  let pre_hash_v1 t = pre_hash_v1_t (V1.import t)
+
+  let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
 end
 
 module Contents = struct
   type t = string
 
-  let pre_hash_v1 x =
-    let ty = Irmin.Type.(pair (string_of `Int64) unit) in
-    Irmin.Type.(pre_hash ty) (x, ())
+  let ty = Irmin.Type.(pair (string_of `Int64) unit)
 
-  let t = Irmin.Type.(like ~pre_hash:pre_hash_v1 string)
+  let pre_hash_ty = Irmin.Type.(unstage (pre_hash ty))
+
+  let pre_hash_v1 x = pre_hash_ty (x, ())
+
+  let t = Irmin.Type.(like string ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
 
   let merge = Irmin.Merge.(idempotent (Irmin.Type.option t))
 end
@@ -227,6 +237,7 @@ type index = {
   path : string;
   repo : Store.Repo.t;
   patch_context : (context -> context tzresult Lwt.t) option;
+  readonly : bool;
 }
 
 and context = {index : index; parents : Store.Commit.t list; tree : Store.tree}
@@ -255,11 +266,15 @@ let restore_integrity ?ppf index =
            "unable to fix the corrupted context: %d bad entries detected"
            n)
 
+let syncs index = Store.sync index.repo
+
 let exists index key =
+  if index.readonly then syncs index ;
   Store.Commit.of_hash index.repo (Hash.of_context_hash key)
   >|= function None -> false | Some _ -> true
 
 let checkout index key =
+  if index.readonly then syncs index ;
   Store.Commit.of_hash index.repo (Hash.of_context_hash key)
   >>= function
   | None ->
@@ -416,14 +431,21 @@ let fork_test_chain v ~protocol ~expiration =
 
 (*-- Initialisation ----------------------------------------------------------*)
 
-let init ?patch_context ?mapsize:_ ?readonly root =
+let init ?patch_context ?mapsize:_ ?(readonly = false) root =
   Store.Repo.v
-    (Irmin_pack.config ?readonly ?index_log_size:!index_log_size root)
+    (Irmin_pack.config ~readonly ?index_log_size:!index_log_size root)
   >>= fun repo ->
-  let v = {path = root; repo; patch_context} in
+  let v = {path = root; repo; patch_context; readonly} in
   Lwt.return v
 
-let close index = Store.Repo.close index.repo
+let with_timer f =
+  let t0 = Sys.time () in
+  f () >|= fun () ->
+  Sys.time () -. t0
+
+let close index =
+  with_timer (fun () -> Store.Repo.close index.repo)
+  >|= fun t -> Fmt.epr "closing index %f" t
 
 let get_branch chain_id = Format.asprintf "%a" Chain_id.pp chain_id
 
