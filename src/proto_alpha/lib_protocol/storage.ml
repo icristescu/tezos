@@ -25,6 +25,7 @@
 
 open Storage_functors
 open Misc.Syntax
+module Z' = Z
 
 module UInt16 = struct
   type t = int
@@ -193,7 +194,11 @@ module Contract = struct
 
   (* Consume gas for serialization and deserialization of expr in this
      module *)
-  module Make_carbonated_map_expr (N : Storage_sigs.NAME) = struct
+  module Make_carbonated_map_expr (N : Storage_sigs.NAME) :
+    Storage_sigs.Non_iterable_indexed_carbonated_data_storage
+      with type key = Contract_repr.t
+       and type value = Script_repr.lazy_expr
+       and type t := Raw_context.t = struct
     module I =
       Indexed_context.Make_carbonated_map
         (N)
@@ -320,18 +325,18 @@ module Big_map = struct
               (Z)
 
     let incr ctxt =
-      get ctxt >>=? fun i -> set ctxt (Z.succ i) >|=? fun ctxt -> (ctxt, i)
+      get ctxt >>=? fun i -> set ctxt (Z'.succ i) >|=? fun ctxt -> (ctxt, i)
 
-    let init ctxt = init ctxt Z.zero
+    let init ctxt = init ctxt Z'.zero
   end
 
   module Index = struct
     type t = Z.t
 
     let rpc_arg =
-      let construct = Z.to_string in
+      let construct = Z'.to_string in
       let destruct hash =
-        match Z.of_string hash with
+        match Z'.of_string hash with
         | exception _ ->
             Error "Cannot parse big map id"
         | id ->
