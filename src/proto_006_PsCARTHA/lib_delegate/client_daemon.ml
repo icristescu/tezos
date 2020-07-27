@@ -152,13 +152,8 @@ end
 module Baker = struct
   let run (cctxt : #Protocol_client_context.full) ?minimal_fees
       ?minimal_nanotez_per_gas_unit ?minimal_nanotez_per_byte ?max_priority
-      ~chain ~context_path ~keep_alive delegates =
+      ~chain ~context_path ~keep_alive:_ ~blocks_file delegates =
     let process () =
-      Config_services.user_activated_upgrades cctxt
-      >>=? fun user_activated_upgrades ->
-      ( if chain = `Test then monitor_fork_testchain cctxt ~cleanup_nonces:true
-      else return_unit )
-      >>=? fun () ->
       Client_baking_blocks.monitor_heads
         ~next_protocols:(Some [Protocol.hash])
         cctxt
@@ -168,21 +163,18 @@ module Baker = struct
       >>= fun () ->
       Client_baking_forge.create
         cctxt
-        ~user_activated_upgrades
+        ~user_activated_upgrades:[]
         ?minimal_fees
         ?minimal_nanotez_per_gas_unit
         ?minimal_nanotez_per_byte
         ?max_priority
         ~chain
+        ~blocks_file
         ~context_path
         delegates
         block_stream
     in
-    Client_confirmations.wait_for_bootstrapped
-      ~retry:(retry cctxt ~delay:1. ~factor:1.5 ~tries:5)
-      cctxt
-    >>=? fun () ->
-    if keep_alive then retry_on_disconnection cctxt process else process ()
+    process ()
 end
 
 module Accuser = struct

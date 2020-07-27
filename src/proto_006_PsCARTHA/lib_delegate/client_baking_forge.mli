@@ -32,24 +32,6 @@ open Alpha_context
     reveal the aforementioned nonce during the next cycle. *)
 val generate_seed_nonce : unit -> Nonce.t
 
-(** [inject_block cctxt blk ?force ~priority ~timestamp ~fitness
-    ~seed_nonce ~src_sk ops] tries to inject a block in the node. If
-    [?force] is set, the fitness check will be bypassed. [priority]
-    will be used to compute the baking slot (level is
-    precomputed). [src_sk] is used to sign the block header. *)
-val inject_block :
-  #Protocol_client_context.full ->
-  ?force:bool ->
-  ?seed_nonce_hash:Nonce_hash.t ->
-  chain:Chain_services.chain ->
-  shell_header:Block_header.shell_header ->
-  priority:int ->
-  delegate_pkh:Signature.Public_key_hash.t ->
-  delegate_sk:Client_keys.sk_uri ->
-  level:Raw_level.t ->
-  Operation.raw list list ->
-  Block_hash.t tzresult Lwt.t
-
 type error += Failed_to_preapply of Tezos_base.Operation.t * error list
 
 (** [forge_block cctxt ?fee_threshold ?force ?operations ?best_effort
@@ -100,6 +82,7 @@ val create :
   ?minimal_nanotez_per_byte:Z.t ->
   ?max_priority:int ->
   chain:Chain_services.chain ->
+  blocks_file:string ->
   context_path:string ->
   public_key_hash list ->
   Client_baking_blocks.block_info tzresult Lwt_stream.t ->
