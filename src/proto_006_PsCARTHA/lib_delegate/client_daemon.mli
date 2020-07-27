@@ -46,6 +46,7 @@ module Baker : sig
     chain:Chain_services.chain ->
     context_path:string ->
     keep_alive:bool ->
+    blocks_file:string ->
     public_key_hash list ->
     unit tzresult Lwt.t
 end

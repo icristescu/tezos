@@ -35,6 +35,11 @@ let directory_parameter =
         failwith "Directory doesn't exist: '%s'" p
       else return p)
 
+let file_parameter =
+  Clic.parameter (fun _ p ->
+      if not (Sys.file_exists p) then failwith "File '%s' doesn't exist" p
+      else return p)
+
 let mempool_arg =
   Clic.arg
     ~long:"mempool"
@@ -259,6 +264,7 @@ let baker_commands () =
            ~name:"context_path"
            ~desc:"Path to the node data directory (e.g. $HOME/.tezos-node)"
            directory_parameter
+      @@ param ~name:"blocks_file" ~desc:"Path to blocks" file_parameter
       @@ seq_of_param Client_keys.Public_key_hash.alias_param )
       (fun ( pidfile,
              max_priority,
@@ -267,6 +273,7 @@ let baker_commands () =
              minimal_nanotez_per_byte,
              keep_alive )
            node_path
+           blocks_file
            delegates
            cctxt ->
         may_lock_pidfile pidfile
@@ -284,6 +291,7 @@ let baker_commands () =
           ?max_priority
           ~context_path:(Filename.concat node_path "context")
           ~keep_alive
+          ~blocks_file
           (List.map snd delegates)) ]
 
 let endorser_commands () =
