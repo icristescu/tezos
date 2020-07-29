@@ -113,7 +113,7 @@ val originate_contract :
   ?verbose_signing:bool ->
   ?branch:int ->
   ?fee:Tez.t ->
-  ?gas_limit:Z.t ->
+  ?gas_limit:Gas.Arith.integral ->
   ?storage_limit:Z.t ->
   delegate:public_key_hash option ->
   initial_storage:string ->
@@ -142,7 +142,7 @@ val transfer :
   ?arg:string ->
   amount:Tez.t ->
   ?fee:Tez.t ->
-  ?gas_limit:Z.t ->
+  ?gas_limit:Gas.Arith.integral ->
   ?storage_limit:Z.t ->
   ?counter:Z.t ->
   fee_parameter:Injection.fee_parameter ->

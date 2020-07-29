@@ -111,7 +111,7 @@ let reveal cctxt ~chain ~block ?confirmations ?dry_run ?verbose_signing ?branch
                source;
                fee;
                counter;
-               gas_limit = Z.of_int ~-1;
+               gas_limit = Gas.Arith.integral_of_int ~-1;
                storage_limit = Z.zero;
                operation = Reveal src_pk;
              })

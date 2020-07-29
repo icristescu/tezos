@@ -76,7 +76,7 @@ val transfer :
   ?arg:string ->
   amount:Tez.t ->
   ?fee:Tez.t ->
-  ?gas_limit:counter ->
+  ?gas_limit:Gas.Arith.integral ->
   ?storage_limit:counter ->
   ?counter:counter ->
   fee_parameter:Injection.fee_parameter ->

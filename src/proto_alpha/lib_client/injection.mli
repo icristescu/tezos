@@ -83,7 +83,7 @@ val inject_manager_operation :
   src_pk:Signature.public_key ->
   src_sk:Client_keys.sk_uri ->
   ?fee:Tez.t ->
-  ?gas_limit:Z.t ->
+  ?gas_limit:Gas.Arith.integral ->
   ?storage_limit:Z.t ->
   ?counter:Z.t ->
   fee_parameter:fee_parameter ->
