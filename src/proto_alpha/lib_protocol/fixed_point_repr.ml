@@ -100,7 +100,11 @@ module Make (Arg : Decimals) : Full = struct
 
   type 'a t = Z.t
 
-  let scaling_factor = Z.pow (Z.of_int 10) Arg.decimals
+  (* FIXME Add [Z.pow] to the environment v1 *)
+  let rec z_pow v e =
+    if Compare.Int.(e = 0) then Z.one else Z.mul v (z_pow v (e - 1))
+
+  let scaling_factor = z_pow (Z.of_int 10) Arg.decimals
 
   type fp = fp_tag t
 
@@ -110,7 +114,8 @@ module Make (Arg : Decimals) : Full = struct
 
   let integral_of_int int = integral @@ Z.of_int int
 
-  let integral_to_z x = Z.ediv x scaling_factor
+  (* FIXME Add [Z.ediv] to the environment v1 *)
+  let integral_to_z x = Z.ediv_rem x scaling_factor |> fst
 
   let unsafe_fp x = x
 
@@ -120,12 +125,13 @@ module Make (Arg : Decimals) : Full = struct
 
   let sub = Z.sub
 
+  (* FIXME Add [Z.erem] to the environment v1 *)
   let ceil x =
-    let r = Z.erem x scaling_factor in
+    let r = Z.ediv_rem x scaling_factor |> snd in
     if Z.equal r Z.zero then x else Z.add x (Z.sub scaling_factor r)
 
   let floor x =
-    let r = Z.erem x scaling_factor in
+    let r = Z.ediv_rem x scaling_factor |> snd in
     if Z.equal r Z.zero then x else Z.sub x r
 
   let fp x = x
@@ -150,12 +156,19 @@ module Make (Arg : Decimals) : Full = struct
 
   let min = Compare.Z.min
 
-  let pp_positive_fp =
-    let decimals_fmt = Format.sprintf "%%0%dd" Arg.decimals in
-    fun fmtr fp ->
-      let (q, r) = Z.ediv_rem fp scaling_factor in
-      if Z.equal r Z.zero then Z.pp fmtr q
-      else Format.fprintf fmtr "%a.%s" Z.pp q (Z.format decimals_fmt r)
+  let pp_z scaling_factor fmtr milligas =
+    if Compare.Int.(scaling_factor <> 3) then
+      Format.fprintf fmtr "cannot print pp_z"
+    else
+      let (q, r) = Z.ediv_rem milligas (Z.of_int scaling_factor) in
+      if Z.equal r Z.zero then Format.fprintf fmtr "%s" (Z.to_string q)
+      else Format.fprintf fmtr "%s.%03d" (Z.to_string q) (Z.to_int r)
+
+  let pp_positive_fp fmtr fp =
+    let z_pp fmtr z = Format.fprintf fmtr "%s" (Z.to_string z) in
+    let (q, r) = Z.ediv_rem fp scaling_factor in
+    if Z.equal r Z.zero then Format.fprintf fmtr "%s" (Z.to_string q)
+    else Format.fprintf fmtr "%a.%a" z_pp q (pp_z 3) r
 
   let pp fmtr fp =
     if Compare.Z.(fp >= Z.zero) then pp_positive_fp fmtr fp
