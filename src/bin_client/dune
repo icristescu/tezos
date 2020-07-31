@@ -44,7 +44,7 @@
               (-> void_for_linking))
 
             (select void_for_linking-alpha from
-              (tezos-client-alpha-commands.registration -> void_for_linking)
+              (tezos-client-alpha-commands-registration -> void_for_linking)
               (-> void_for_linking))
             (select void_for_linking-demo-counter from
               (tezos-client-demo-counter -> void_for_linking)
