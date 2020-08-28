@@ -1,6 +1,6 @@
 (executable
  (name get_contracts)
- ; (public_name tezos-get-contracts) ;
+ (public_name tezos-get-contracts)
  (libraries tezos-client-base-unix
             tezos-protocol-006-PsCARTHA
             tezos-client-006-PsCARTHA
