@@ -71,7 +71,7 @@ let () =
     >>= fun m ->
     print_endline "Listing addresses done" ;
     Scripts.fold
-      (fun hash _script () -> Format'.printf "%a" P.Script_expr_hash.pp hash)
+      (fun hash _script () -> Format'.printf "%a\n" P.Script_expr_hash.pp hash)
       m
       () ;
     return_unit )
