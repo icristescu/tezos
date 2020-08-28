@@ -47,6 +47,7 @@ let () =
       ctxt
     >>= (fun res -> Lwt.return (Environment.wrap_error res))
     >>=? fun raw_ctxt ->
+    print_endline "Listing addresses" ;
     Storage.Contract.fold raw_ctxt ~init:Scripts.empty ~f:(fun contract m ->
         let open Tezos_protocol_environment_006_PsCARTHA.Environment in
         let open Tezos_protocol_environment_006_PsCARTHA.Environment
@@ -68,6 +69,7 @@ let () =
         | Error _ ->
             Lwt.return m)
     >>= fun m ->
+    print_endline "Listing addresses done" ;
     Scripts.fold
       (fun hash _script () -> Format'.printf "%a" P.Script_expr_hash.pp hash)
       m
