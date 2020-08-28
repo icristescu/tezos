@@ -1,3 +1,5 @@
+module Format' = Format
+
 let mainnet_genesis =
       {
       Genesis.time = Time.Protocol.of_notation_exn "2018-06-30T16:07:32Z";
@@ -41,15 +43,17 @@ let () =
     Storage.Contract.fold
       raw_ctxt
       ~init:()
-      ~f:(fun contract acc ->
+      ~f:(fun contract () ->
           let open Tezos_protocol_environment_006_PsCARTHA.Environment in
           let open Tezos_protocol_environment_006_PsCARTHA.Environment.Error_monad in
           Storage.Contract.Code.get_option raw_ctxt contract >>= function
-          | Ok (_, None) -> Lwt.return acc
-          | Ok (_, Some _code) ->
-            (* DO SOMETHING *)
-            assert false
-          | Error _ -> Lwt.return acc
+          | Ok (_, None) -> Lwt.return ()
+          | Ok (_, Some code) ->
+            let code = Data_encoding.force_decode code in
+            let code = match code with | Some code -> code | None -> assert false in
+            Format'.printf "%a" Michelson_v1_printer.print_expr code;
+            Lwt.return ()
+          | Error _ -> Lwt.return ()
         ) >>= fun () ->
     return_unit
 
