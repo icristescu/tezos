@@ -137,8 +137,9 @@ let () =
           filename
           (fun fmt contracts ->
             Format'.pp_print_list
-              ~pp_sep:Format'.pp_newline
+              ~pp_sep:Format'.pp_print_newline
               P.Contract_repr.pp
+              fmt
               contracts)
           contracts)
       m
