@@ -93,16 +93,23 @@ let () =
         let filename = P.Script_expr_hash.to_b58check hash ^ ".tz" in
         let chan = open_out filename in
         let fmt = Format'.formatter_of_out_channel chan in
+        let err () =
+          Format'.eprintf
+            "Could not print script for %s from contracts %a"
+            filename
+            (Format'.pp_print_list
+               ~pp_sep:Format'.pp_print_space
+               P.Contract_repr.pp)
+            contracts
+        in
         ( try Format'.fprintf fmt "%a\n" Michelson_v1_printer.print_expr script
-          with _ ->
-            Format'.eprintf
-              "Could not print script for %s from contracts %a"
-              filename
-              (Format'.pp_print_list
-                 ~pp_sep:Format'.pp_print_space
-                 P.Contract_repr.pp)
-              contracts ) ;
-        flush chan ; close_out chan)
+          with _ -> err () ) ;
+        flush chan ;
+        close_out chan ;
+        let input_chan = open_in filename in
+        let file_length = in_channel_length input_chan in
+        close_in input_chan ;
+        if file_length < 2 then err ())
       m
       () ;
     return_unit )
