@@ -47,15 +47,24 @@ let () =
       ctxt
     >>= (fun res -> Lwt.return (Environment.wrap_error res))
     >>=? fun raw_ctxt ->
+    Storage.Contract.list raw_ctxt
+    >>=? fun contract_list ->
+    let total_contract_number = List.length contract_list in
     print_endline "Listing addresses" ;
-    Storage.Contract.fold raw_ctxt ~init:Scripts.empty ~f:(fun contract m ->
+    Storage.Contract.fold
+      raw_ctxt
+      ~init:(Scripts.empty, 0)
+      ~f:(fun contract (m, i) ->
+        let i = i + 1 in
+        Format'.printf "%d/%d\n" i total_contract_number ;
+        flush stdout ;
         let open Tezos_protocol_environment_006_PsCARTHA.Environment in
         let open Tezos_protocol_environment_006_PsCARTHA.Environment
                  .Error_monad in
         Storage.Contract.Code.get_option raw_ctxt contract
         >>= function
         | Ok (_, None) ->
-            Lwt.return m
+            Lwt.return (m, i)
         | Ok (_, Some code) ->
             let code = Data_encoding.force_decode code in
             let code =
@@ -66,17 +75,18 @@ let () =
             in
             let key = Script_expr_hash.hash_bytes [bytes] in
             Lwt.return
-            @@ Scripts.update
-                 key
-                 (function
-                   | Some (code, contracts) ->
-                       Some (code, contract :: contracts)
-                   | None ->
-                       Some (code, [contract]))
-                 m
+              ( Scripts.update
+                  key
+                  (function
+                    | Some (code, contracts) ->
+                        Some (code, contract :: contracts)
+                    | None ->
+                        Some (code, [contract]))
+                  m,
+                i )
         | Error _ ->
-            Lwt.return m)
-    >>= fun m ->
+            Lwt.return (m, i))
+    >>= fun (m, _) ->
     print_endline "Listing addresses done" ;
     Scripts.fold
       (fun hash (script, contracts) () ->
