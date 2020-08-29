@@ -75,7 +75,9 @@ let () =
         let filename = P.Script_expr_hash.to_b58check hash ^ ".tz" in
         let chan = open_out filename in
         let fmt = Format'.formatter_of_out_channel chan in
-        Format'.fprintf fmt "%a\n" Michelson_v1_printer.print_expr script)
+        Format'.fprintf fmt "%a\n" Michelson_v1_printer.print_expr script ;
+        flush chan ;
+        close_out chan)
       m
       () ;
     return_unit )
