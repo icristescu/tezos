@@ -48,7 +48,7 @@ let () =
     >>= (fun res -> Lwt.return (Environment.wrap_error res))
     >>=? fun raw_ctxt ->
     Storage.Contract.list raw_ctxt
-    >>=? fun contract_list ->
+    >>= fun contract_list ->
     let total_contract_number = List.length contract_list in
     print_endline "Listing addresses" ;
     Storage.Contract.fold
