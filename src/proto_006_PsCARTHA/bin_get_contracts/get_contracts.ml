@@ -95,7 +95,7 @@ let () =
         let fmt = Format'.formatter_of_out_channel chan in
         let err () =
           Format'.eprintf
-            "Could not print script for %s from contracts %a"
+            "Could not print script for %s from contracts %a\n\n"
             filename
             (Format'.pp_print_list
                ~pp_sep:Format'.pp_print_space
