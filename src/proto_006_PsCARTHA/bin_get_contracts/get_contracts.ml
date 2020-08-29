@@ -97,7 +97,11 @@ let () =
             (Format'.pp_print_list
                ~pp_sep:Format'.pp_print_space
                P.Contract_repr.pp)
-            contracts
+            contracts ;
+          Format'.eprintf
+            "The script is:%a.\n\n"
+            Michelson_v1_printer.print_expr
+            script
         in
         (try Michelson_v1_printer.print_expr fmt script with _ -> err ()) ;
         flush chan ;
