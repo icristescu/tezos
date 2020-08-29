@@ -58,31 +58,38 @@ let () =
         let open Tezos_protocol_environment_006_PsCARTHA.Environment in
         let open Tezos_protocol_environment_006_PsCARTHA.Environment
                  .Error_monad in
-        Storage.Contract.Code.get_option raw_ctxt contract
-        >>= function
-        | Ok (_, None) ->
+        match Contract_repr.is_implicit contract with
+        | Some _key_hash ->
             Lwt.return (m, i)
-        | Ok (_, Some code) ->
-            let code = Data_encoding.force_decode code in
-            let code =
-              match code with Some code -> code | None -> assert false
-            in
-            let bytes =
-              Data_encoding.Binary.to_bytes_exn Script_repr.expr_encoding code
-            in
-            let key = Script_expr_hash.hash_bytes [bytes] in
-            Lwt.return
-              ( Scripts.update
-                  key
-                  (function
-                    | Some (code, contracts) ->
-                        Some (code, contract :: contracts)
-                    | None ->
-                        Some (code, [contract]))
-                  m,
-                i )
-        | Error _ ->
-            Lwt.return (m, i))
+        | None -> (
+            Storage.Contract.Code.get_option raw_ctxt contract
+            >>= function
+            | Ok (_, None) ->
+                Lwt.return (m, i) (* Should not happen *)
+            | Ok (_, Some code) ->
+                let code = Data_encoding.force_decode code in
+                let code =
+                  match code with Some code -> code | None -> assert false
+                in
+                let bytes =
+                  Data_encoding.Binary.to_bytes_exn
+                    Script_repr.expr_encoding
+                    code
+                in
+                let key = Script_expr_hash.hash_bytes [bytes] in
+                Lwt.return
+                  ( Scripts.update
+                      key
+                      (function
+                        | Some (code, contracts) ->
+                            Some (code, contract :: contracts)
+                        | None ->
+                            Some (code, [contract]))
+                      m,
+                    i )
+            | Error _ ->
+                Lwt.return (m, i)
+            (* Should not happen *) ))
     >>= fun (m, _) ->
     print_endline "Listing addresses done" ;
     Scripts.fold
