@@ -102,7 +102,7 @@ let () =
                P.Contract_repr.pp)
             contracts
         in
-        ( try Format'.fprintf fmt "%a\n" Michelson_v1_printer.print_expr script
+        ( try Michelson_v1_printer.print_expr fmt script
           with _ -> err () ) ;
         flush chan ;
         close_out chan ;
