@@ -102,8 +102,7 @@ let () =
                P.Contract_repr.pp)
             contracts
         in
-        ( try Michelson_v1_printer.print_expr fmt script
-          with _ -> err () ) ;
+        (try Michelson_v1_printer.print_expr fmt script with _ -> err ()) ;
         flush chan ;
         close_out chan ;
         let input_chan = open_in filename in
