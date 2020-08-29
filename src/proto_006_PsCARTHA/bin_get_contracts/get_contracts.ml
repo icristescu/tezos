@@ -56,7 +56,7 @@ let () =
       ~init:(Scripts.empty, 0)
       ~f:(fun contract (m, i) ->
         let i = i + 1 in
-        Format'.printf "%d/%d\n" i total_contract_number ;
+        if i mod 1000 = 0 then Format'.printf "%d/%d\n" i total_contract_number ;
         flush stdout ;
         let open Tezos_protocol_environment_006_PsCARTHA.Environment in
         let open Tezos_protocol_environment_006_PsCARTHA.Environment
