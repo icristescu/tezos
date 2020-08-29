@@ -18,6 +18,14 @@ module ScriptOrd : Map.OrderedType with type t = P.Script_expr_hash.t = struct
   let compare = P.Script_expr_hash.compare
 end
 
+let print_to_file filename pp x =
+  let chan = open_out filename in
+  ( try
+      let fmt = Format.formatter_of_out_channel chan in
+      pp fmt x
+    with err -> flush chan ; close_out chan ; raise err ) ;
+  flush chan ; close_out chan
+
 module Scripts = Map.Make (ScriptOrd)
 
 let () =
@@ -94,13 +102,12 @@ let () =
     print_endline "Listing addresses done" ;
     Scripts.fold
       (fun hash (script, contracts) () ->
-        let filename = P.Script_expr_hash.to_b58check hash ^ ".tz" in
-        let chan = open_out filename in
-        let fmt = Format'.formatter_of_out_channel chan in
+        let hash_string = P.Script_expr_hash.to_b58check hash in
+        let filename = hash_string ^ ".tz" in
         let err () =
           Format'.eprintf
             "Could not print script for %s from contracts %a\n\n"
-            filename
+            hash_string
             (Format'.pp_print_list
                ~pp_sep:Format'.pp_print_space
                P.Contract_repr.pp)
@@ -110,14 +117,30 @@ let () =
             Michelson_v1_printer.print_expr
             script
         in
-        ( try Format'.fprintf fmt "%a@." Michelson_v1_printer.print_expr script
+        ( try
+            print_to_file
+              filename
+              (fun fmt script ->
+                Format'.fprintf
+                  fmt
+                  "%a@."
+                  Michelson_v1_printer.print_expr
+                  script)
+              script
           with _ -> err () ) ;
-        flush chan ;
-        close_out chan ;
         let input_chan = open_in filename in
         let file_length = in_channel_length input_chan in
         close_in input_chan ;
-        if file_length < 2 then err ())
+        if file_length < 2 then err () ;
+        let filename = hash_string ^ ".addresses" in
+        print_to_file
+          filename
+          (fun fmt contracts ->
+            Format'.pp_print_list
+              ~pp_sep:Format'.pp_newline
+              P.Contract_repr.pp
+              contracts)
+          contracts)
       m
       () ;
     return_unit )
