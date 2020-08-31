@@ -12,6 +12,17 @@ let mainnet_genesis =
         "Ps9mPmXaRzmzk35gbAYNCAw6UXdE2qoABTHbN2oEEc1qM7CwT9P";
   }
 
+let carthagenet_genesis =
+  {
+    Genesis.time = Time.Protocol.of_notation_exn "2019-11-28T13:02:13Z";
+    block =
+      Block_hash.of_b58check_exn
+        "BLockGenesisGenesisGenesisGenesisGenesisd6f5afWyME7";
+    protocol =
+      Protocol_hash.of_b58check_exn
+        "PtYuensgYBb3G3x1hLLbCmcav8ue8Kyd2khADcL5LsT5R1hcXex";
+  }
+
 module ScriptOrd : Map.OrderedType with type t = P.Script_expr_hash.t = struct
   type t = P.Script_expr_hash.t
 
@@ -36,7 +47,7 @@ let () =
     Tezos_shell.State.init
       ~store_root:(Filename.concat data_dir "store")
       ~context_root:(Filename.concat data_dir "context")
-      mainnet_genesis
+      carthagenet_genesis
     >>=? fun (_state, chain, _ctxt, _) ->
     Tezos_shell.Chain.head chain
     >>= fun head ->
