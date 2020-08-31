@@ -34,11 +34,12 @@ let reporter () =
   let report src level ~over k msgf =
     let k _ = over () ; k () in
     let with_stamp h _tags k fmt =
-      let dt = Mtime.Span.to_us (Mtime_clock.elapsed ()) in
+      let dt = Systime_os.now () in
       Fmt.kpf
         k
         Fmt.stderr
-        ("%+04.0fus %a %a @[" ^^ fmt ^^ "@]@.")
+        ("%a %a %a @[" ^^ fmt ^^ "@]@.")
+        Time.System.pp_hum
         dt
         Fmt.(styled `Magenta string)
         (Logs.Src.name src)
@@ -53,9 +54,10 @@ let index_log_size = ref None
 
 let () =
   let verbose () =
-    Logs.set_level (Some Logs.Debug) ;
+    Logs.set_level (Some Logs.App) ;
     Logs.set_reporter (reporter ())
   in
+  verbose () ;
   let index_log_size n = index_log_size := Some (int_of_string n) in
   match Unix.getenv "TEZOS_STORAGE" with
   | exception Not_found ->
@@ -229,7 +231,7 @@ module Conf = struct
 end
 
 module Store =
-  Irmin_pack.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
+  Irmin_pack.Make_ext_layered (Conf) (Irmin.Metadata.None) (Contents)
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Hash)
@@ -256,8 +258,9 @@ let current_test_chain_key = ["test_chain"]
 
 let current_data_key = ["data"]
 
-let restore_integrity ?ppf index =
-  match Store.integrity_check ?ppf ~auto_repair:true index.repo with
+let restore_integrity ?ppf:_ _index = Ok None
+
+(*  match Store.integrity_check ?ppf ~auto_repair:true index.repo with
   | Ok (`Fixed n) ->
       Ok (Some n)
   | Ok `No_error ->
@@ -268,7 +271,7 @@ let restore_integrity ?ppf index =
       error
         (failure
            "unable to fix the corrupted context: %d bad entries detected"
-           n)
+           n)*)
 
 let syncs index = Store.sync index.repo
 
@@ -311,7 +314,34 @@ let unshallow context =
               >|= fun _ -> ())
         children)
 
+let counter = ref 0
+
+let first = ref true
+
+let pp_stats () =
+  let stats = Irmin_layers.Stats.get () in
+  let pp_comma ppf () = Fmt.pf ppf "," in
+  let copied_objects =
+    List.map2 (fun x y -> x + y) stats.copied_contents stats.copied_commits
+    |> List.map2 (fun x y -> x + y) stats.copied_nodes
+    |> List.map2 (fun x y -> x + y) stats.copied_branches
+  in
+  Format.printf
+    "%a Irmin stats: nb_freeze = %d copied_objects = %a waiting_freeze  = %a \
+     completed_freeze = %a \n\
+     @."
+    Time.System.pp_hum
+    (Systime_os.now ())
+    stats.nb_freeze
+    Fmt.(list ~sep:pp_comma int)
+    copied_objects
+    Fmt.(list ~sep:pp_comma float)
+    stats.waiting_freeze
+    Fmt.(list ~sep:pp_comma float)
+    stats.completed_freeze
+
 let raw_commit ~time ?(message = "") context =
+  counter := succ !counter ;
   let info =
     Irmin.Info.v ~date:(Time.Protocol.to_seconds time) ~author:"Tezos" message
   in
@@ -319,7 +349,19 @@ let raw_commit ~time ?(message = "") context =
   unshallow context
   >>= fun () ->
   Store.Commit.v context.index.repo ~info ~parents context.tree
-  >|= fun h ->
+  >>= fun h ->
+  ( if !first then (
+    first := false ;
+    pp_stats () ;
+    Store.freeze ~max:[h] context.index.repo )
+  else Lwt.return_unit )
+  >>= fun () ->
+  ( if !counter = 4000 then (
+    counter := 0 ;
+    pp_stats () ;
+    Store.freeze ~max:[h] context.index.repo )
+  else Lwt.return_unit )
+  >|= fun () ->
   Store.Tree.clear context.tree ;
   h
 
@@ -435,17 +477,25 @@ let fork_test_chain v ~protocol ~expiration =
 
 (*-- Initialisation ----------------------------------------------------------*)
 
+let config ?readonly ?index_log_size root =
+  let conf =
+    Irmin_pack.config
+      ?readonly
+      ?index_log_size
+      ~index_throttle:`Overcommit_memory
+      root
+  in
+  Irmin_pack.config_layers ~conf ~copy_in_upper:true ~with_lower:true ()
+
 let init ?patch_context ?mapsize:_ ?(readonly = false) root =
-  Store.Repo.v
-    (Irmin_pack.config ~readonly ?index_log_size:!index_log_size root)
+  Store.Repo.v (config ~readonly ?index_log_size:!index_log_size root)
   >>= fun repo ->
   let v = {path = root; repo; patch_context; readonly} in
   Lwt.return v
 
 let with_timer f =
   let t0 = Sys.time () in
-  f () >|= fun () ->
-  Sys.time () -. t0
+  f () >|= fun () -> Sys.time () -. t0
 
 let close index =
   with_timer (fun () -> Store.Repo.close index.repo)
