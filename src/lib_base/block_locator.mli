@@ -30,13 +30,13 @@
    the head.
 
     The distance between two hashes of a locator is randomized to
-   prevent from attacks. The seed is determined uniquely from the
-   [peer_id] of the sender and the receiver so that the distance
-   between two hashes can be recomputed locally.  This is the purpose
-   of the function [to_steps].
+    prevent attacks. The seed is determined uniquely from the
+    [peer_id] of the sender and the receiver so that the distance
+    between two hashes can be recomputed locally. This is the purpose
+    of the function [to_steps].
 
     The [step] representation is mostly used by the [peer_validator]
-   and the [bootstrap_pipeline} modules.
+    and the [bootstrap_pipeline] modules.
 
     The last step of a locator may be truncated. It is the case when
     the last step hits the caboose. Thus, such a [non-strict] step can
