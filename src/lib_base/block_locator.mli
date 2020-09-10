@@ -38,14 +38,18 @@
     The [step] representation is mostly used by the [peer_validator]
    and the [bootstrap_pipeline} modules.
 
-    The last step of a locator may be truncated. There are two typical
-   cases for this:
+    The last step of a locator may be truncated. It is the case when
+    the last step hits the caboose. Thus, such a [non-strict] step can
+    be terminated by:
 
-    1. When the last step hits the genesis block hash
+    - The genesis: it is the case in both [Archive] and [Full] modes
+      as the caboose is always located down to the genesis block, but
+      it is also the case in a [Rolling] mode early state (when
+      caboose = genesis).
 
-    2. In [Rolling] or [Full] mode, we are not interested into blocks
-   below the [save point]. A step which is not truncated is said
-   [strict]. *)
+    - Any block: it is the case in [Rolling] mode when the caboose is
+      higher than the genesis. Indeed, the caboose can be located
+      (almost) anywhere. *)
 
 (** Type for sparse block locators (/à la/ Bitcoin). *)
 type t = private Block_header.t * Block_hash.t list
