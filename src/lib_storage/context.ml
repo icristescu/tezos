@@ -53,11 +53,15 @@ let reporter () =
 let index_log_size = ref None
 
 let () =
-  let verbose () =
+  let verbose_app () =
     Logs.set_level (Some Logs.App) ;
     Logs.set_reporter (reporter ())
   in
-  verbose () ;
+  let verbose_debug () =
+    Logs.set_level (Some Logs.Debug) ;
+    Logs.set_reporter (reporter ())
+  in
+  verbose_app () ;
   let index_log_size n = index_log_size := Some (int_of_string n) in
   match Unix.getenv "TEZOS_STORAGE" with
   | exception Not_found ->
@@ -66,8 +70,10 @@ let () =
       let args = String.split ',' v in
       List.iter
         (function
-          | "v" | "verbose" | "vv" ->
-              verbose ()
+          | "v" | "verbose" ->
+              verbose_app ()
+          | "vv" ->
+              verbose_debug ()
           | v -> (
             match String.split '=' v with
             | ["index-log-size"; n] ->
@@ -115,7 +121,8 @@ end = struct
 
   let t : t Irmin.Type.t =
     Irmin.Type.map
-      ~cli:(pp, of_string)
+      ~pp
+      ~of_string
       Irmin.Type.(string_of (`Fixed H.digest_size))
       ~short_hash:staged_short_hash
       H.of_raw_string
@@ -287,6 +294,8 @@ let checkout index key =
   | None ->
       Lwt.return_none
   | Some commit ->
+      Logs.debug (fun l ->
+          l "checkout of commit %a@." Store.Commit.pp_hash commit) ;
       let tree = Store.Commit.tree commit in
       let ctxt = {index; tree; parents = [commit]} in
       Lwt.return_some ctxt
@@ -318,6 +327,19 @@ let counter = ref 0
 
 let first = ref true
 
+let total = ref 0
+
+let pp_commit_stats h =
+  let num_objects = Irmin_layers.Stats.get_adds () in
+  Irmin_layers.Stats.reset_adds () ;
+  total := !total + num_objects ;
+  Logs.app (fun l ->
+      l
+        "Irmin stats: Objects created by commit %a = %d \n@."
+        Store.Commit.pp_hash
+        h
+        num_objects)
+
 let pp_stats () =
   let stats = Irmin_layers.Stats.get () in
   let pp_comma ppf () = Fmt.pf ppf "," in
@@ -326,19 +348,23 @@ let pp_stats () =
     |> List.map2 (fun x y -> x + y) stats.copied_nodes
     |> List.map2 (fun x y -> x + y) stats.copied_branches
   in
-  Format.printf
-    "%a Irmin stats: nb_freeze = %d copied_objects = %a waiting_freeze  = %a \
-     completed_freeze = %a \n\
-     @."
-    Time.System.pp_hum
-    (Systime_os.now ())
-    stats.nb_freeze
-    Fmt.(list ~sep:pp_comma int)
-    copied_objects
-    Fmt.(list ~sep:pp_comma float)
-    stats.waiting_freeze
-    Fmt.(list ~sep:pp_comma float)
-    stats.completed_freeze
+  Logs.app (fun l ->
+      l
+        "%a Irmin stats: nb_freeze = %d copied_objects = %a waiting_freeze  = \
+         %a completed_freeze = %a \n\
+        \ objects added in upper since last freeze = %d \n\
+         @."
+        Time.System.pp_hum
+        (Systime_os.now ())
+        stats.nb_freeze
+        Fmt.(list ~sep:pp_comma int)
+        copied_objects
+        Fmt.(list ~sep:pp_comma float)
+        stats.waiting_freeze
+        Fmt.(list ~sep:pp_comma float)
+        stats.completed_freeze
+        !total) ;
+  total := 0
 
 let raw_commit ~time ?(message = "") context =
   counter := succ !counter ;
@@ -350,6 +376,7 @@ let raw_commit ~time ?(message = "") context =
   >>= fun () ->
   Store.Commit.v context.index.repo ~info ~parents context.tree
   >>= fun h ->
+  pp_commit_stats h ;
   ( if !first then (
     first := false ;
     pp_stats () ;
@@ -490,8 +517,11 @@ let config ?readonly ?index_log_size root =
 let init ?patch_context ?mapsize:_ ?(readonly = false) root =
   Store.Repo.v (config ~readonly ?index_log_size:!index_log_size root)
   >>= fun repo ->
+  (* if Store.needs_recovery repo then *)
   let v = {path = root; repo; patch_context; readonly} in
   Lwt.return v
+
+(* else Lwt.fail_with "need recovery" *)
 
 let with_timer f =
   let t0 = Sys.time () in
