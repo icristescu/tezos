@@ -39,7 +39,8 @@ let () =
     >>= fun () ->
     Alcotest_lwt.run
       "tezos-store"
-      [ Test_cemented_store.tests;
+      [ Test_freeze.tests;
+        Test_cemented_store.tests;
         Test_block_store.tests;
         Test_store.tests;
         Test_protocol_store.tests;
