@@ -512,7 +512,7 @@ let config ?readonly ?index_log_size root =
       ~index_throttle:`Overcommit_memory
       root
   in
-  Irmin_pack.config_layers ~conf ~copy_in_upper:true ~with_lower:true ()
+  Irmin_pack.config_layers ~conf ~copy_in_upper:false ~with_lower:true ~blocking_copy_size:1000 ()
 
 let init ?patch_context ?mapsize:_ ?(readonly = false) root =
   Store.Repo.v (config ~readonly ?index_log_size:!index_log_size root)
