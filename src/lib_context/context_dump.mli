@@ -25,5 +25,19 @@
 (*                                                                           *)
 (*****************************************************************************)
 
+type error +=
+  | System_write_error of string
+  | Bad_hash of string * Bytes.t * Bytes.t
+  | Context_not_found of Bytes.t
+  | System_read_error of string
+  | Inconsistent_snapshot_file
+  | Inconsistent_snapshot_data
+  | Missing_snapshot_data
+  | Invalid_snapshot_version of string * string list
+  | Restore_context_failure
+  | Inconsistent_imported_block of Block_hash.t * Block_hash.t
+
 (** @inline *)
 include Context_dump_intf.Context_dump
+
+include Context_dump_intf.Context_dump_legacy
