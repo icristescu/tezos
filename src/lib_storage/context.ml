@@ -53,15 +53,15 @@ let reporter () =
 let index_log_size = ref None
 
 let () =
-  let verbose_app () =
-    Logs.set_level (Some Logs.App) ;
+  let verbose_info () =
+    Logs.set_level (Some Logs.Info) ;
     Logs.set_reporter (reporter ())
   in
   let verbose_debug () =
     Logs.set_level (Some Logs.Debug) ;
     Logs.set_reporter (reporter ())
   in
-  verbose_app () ;
+  verbose_info () ;
   let index_log_size n = index_log_size := Some (int_of_string n) in
   match Unix.getenv "TEZOS_STORAGE" with
   | exception Not_found ->
@@ -71,7 +71,7 @@ let () =
       List.iter
         (function
           | "v" | "verbose" ->
-              verbose_app ()
+              verbose_info ()
           | "vv" ->
               verbose_debug ()
           | v -> (
@@ -238,7 +238,7 @@ module Conf = struct
 end
 
 module Store =
-  Irmin_pack.Make_ext_layered (Conf) (Irmin.Metadata.None) (Contents)
+  Irmin_pack.Layered.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Hash)
@@ -323,22 +323,33 @@ let unshallow context =
               >|= fun _ -> ())
         children)
 
-let counter = ref 0
+let count = ref 0
 
-let first = ref true
+let counter = ref 0
 
 let total = ref 0
 
-let pp_commit_stats h =
+let commit_stats () =
   let num_objects = Irmin_layers.Stats.get_adds () in
   Irmin_layers.Stats.reset_adds () ;
   total := !total + num_objects ;
-  Logs.app (fun l ->
+  num_objects
+  (*Logs.app (fun l ->
       l
         "Irmin stats: Objects created by commit %a = %d \n@."
         Store.Commit.pp_hash
         h
-        num_objects)
+        num_objects)*)
+
+let maxrss_stat () =
+  let get_maxrss () =
+    let usage = Rusage.(get Self) in
+    let ( / ) = Int64.div in
+    Int64.to_int (usage.maxrss / 1024L / 1024L)
+  in
+  let objs = commit_stats () in
+  Format.printf "commit_number %d, maxrss %d, objects %d\n%!" !count (get_maxrss ()) objs;
+  incr count
 
 let pp_stats () =
   let stats = Irmin_layers.Stats.get () in
@@ -376,13 +387,7 @@ let raw_commit ~time ?(message = "") context =
   >>= fun () ->
   Store.Commit.v context.index.repo ~info ~parents context.tree
   >>= fun h ->
-  pp_commit_stats h ;
-  ( if !first then (
-    first := false ;
-    pp_stats () ;
-    Store.freeze ~max:[h] context.index.repo )
-  else Lwt.return_unit )
-  >>= fun () ->
+  maxrss_stat ();
   ( if !counter = 4000 then (
     counter := 0 ;
     pp_stats () ;
@@ -509,10 +514,9 @@ let config ?readonly ?index_log_size root =
     Irmin_pack.config
       ?readonly
       ?index_log_size
-      ~index_throttle:`Overcommit_memory
       root
   in
-  Irmin_pack.config_layers ~conf ~copy_in_upper:false ~with_lower:true ~blocking_copy_size:1000 ()
+  Irmin_pack.config_layers ~conf ~copy_in_upper:false ~with_lower:true ~blocking_copy_size:1000000 ()
 
 let init ?patch_context ?mapsize:_ ?(readonly = false) root =
   Store.Repo.v (config ~readonly ?index_log_size:!index_log_size root)
