@@ -42,6 +42,81 @@ end
 let rec unfold f u () =
   match f u with None -> Seq.Nil | Some (x, u') -> Cons (x, unfold f u')
 
+module Int32 : RANGE with type bound = Int32.t = struct
+  type bound = Int32.t
+
+  type t = {from : Int32.t; upto : Int32.t}
+
+  let encoding =
+    let open Data_encoding in
+    conv
+      (fun {from; upto} -> (from, upto))
+      (fun (from, upto) -> {from; upto})
+      (obj2 (req "from" Data_encoding.int32) (req "upto" Data_encoding.int32))
+
+  let pp fmt {from; upto} = Format.fprintf fmt "%ld-%ld" from upto
+
+  let is_empty {from; upto} = Int32.sub upto from = 0l
+
+  let length {from; upto} = Int32.to_int (Int32.sub upto from)
+
+  type range_splitter = {range : t; started : bool; over : bool}
+
+  let next_range ~reverse ~max_range_size first_range last_range
+      ({range; started; over} as state) =
+    if not started then Some (first_range, {state with started = true})
+    else if range.upto <= range.from then
+      if over || is_empty last_range then None
+      else Some (last_range, {state with over = true})
+    else
+      let (from, upto, next_range) =
+        if reverse then (
+          let new_upto = Int32.sub range.upto max_range_size in
+          assert (new_upto >= range.from) ;
+          (range.from, new_upto, {from = new_upto; upto = range.upto}) )
+        else
+          let new_from = Int32.add range.from max_range_size in
+          assert (new_from <= range.upto) ;
+          (new_from, range.upto, {from = range.from; upto = new_from})
+      in
+      Some (next_range, {range = {from; upto}; started; over})
+
+  let split ~reverse ~max_range_size ({from; upto} as range) =
+    if max_range_size <= 0 then
+      invalid_arg "Ranger.Int32.split: max_range_size <= 0" ;
+    let floor_size range_size n =
+      (* n - (n mod range_size)) *)
+      Int32.sub n (Int32.rem n range_size)
+    in
+    let ceil_size range_size n =
+      (* n + (size - (n mod range_size)) *)
+      Int32.add n (Int32.sub range_size (Int32.rem n range_size))
+    in
+    if upto <= from then Seq.empty
+    else if Int32.sub upto from < Int32.of_int max_range_size then
+      Seq.return range
+    else
+      let max_range_size = Int32.of_int max_range_size in
+      let from_rounded = ceil_size max_range_size from in
+      let upto_rounded = floor_size max_range_size upto in
+      let bottom_range = {from; upto = from_rounded} in
+      let top_range = {from = upto_rounded; upto} in
+      assert (
+        from <= from_rounded
+        && from_rounded <= upto_rounded
+        && upto_rounded <= upto ) ;
+      let (last_range, first_range) =
+        if reverse then (bottom_range, top_range) else (top_range, bottom_range)
+      in
+      unfold
+        (next_range ~reverse ~max_range_size first_range last_range)
+        {
+          range = {from = from_rounded; upto = upto_rounded};
+          started = is_empty first_range;
+          over = false;
+        }
+end
+
 module type S = sig
   type range
 

@@ -88,6 +88,18 @@ module type RANGE = sig
   val split : reverse:bool -> max_range_size:int -> t -> t Seq.t
 end
 
+(** An implementation of RANGE where bounds are Int32.t. The [split]
+   function also rounds ranges. This way a range such as [3-35] with
+   [max_range_size] is [10] and [reverse] is false gives the following
+   sequence (represented as a list): [(3,10); (10,20); (30,35)].
+
+   Rounding ranges have the property that except the first and last
+   ranges, the bounds depends only on [max_range_size]. This gives
+   more predictable ranges which eases the implementation of [tasks]
+   which have side-effects (storing a range on the hard-drive for
+   example). *)
+module Int32 : RANGE with type bound = Int32.t
+
 module type S = sig
   type range
 
