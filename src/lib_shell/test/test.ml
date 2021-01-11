@@ -42,6 +42,7 @@ let () =
       ("consensus heuristic sync", Test_consensus_heuristic.tests);
       ("consensus heuristic", Test_consensus_heuristic.tests_lwt);
       ("ranger", Test_ranger.tests);
+      ("bootstrapper", Test_bootstrapper.tests);
       ("test protocol validator", Test_protocol_validator.tests);
       ("test validator", Test_validator.tests);
       ("test node", Test_node.tests) ]
