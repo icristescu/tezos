@@ -91,3 +91,34 @@ module Raw_operations :
     (* notified value contain the queried value, plus the merkle tree hashes
           needed to recompute the merkle tree root. *)
      and type notified_value = Operation.t list * Operation_list_list_hash.path
+
+(** Simple requester over a piece of data. The data is
+   indexed by a datatype. A data fetched over the network is
+   indexed by a datatype to ensure that this is the data
+   expected. For example if the requester is used to request the
+   checkpoint, the index will be the chain_id since there is one
+   checkpoint per chain_id. This module aims to be used by the
+   `p2p_reader` module only.
+
+   Any hook attached should be free explicititely.  *)
+module SimpleRequester (I : Stdlib.Hashtbl.HashedType) : sig
+  type handler
+
+  type 'a t
+
+  type index = I.t
+
+  (** [create n] creates a requester of size n *)
+  val create : int -> 'a t
+
+  (** [on_request requester index hook] attaches [hook] indexed by [index] to the [requester]. *)
+  val on_request : 'a t -> index -> ('a -> unit) -> handler
+
+  (** [notify requester index data] notifies [requester] that the data
+     indexed by [index] is available. All the hooks attached with this
+     index will be notified. *)
+  val notify : 'a t -> index -> 'a -> unit
+
+  (** [clear requester handle] clears in the [requester] the hook associated with [handle]. *)
+  val clear : 'a t -> handler -> unit
+end

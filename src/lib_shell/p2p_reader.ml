@@ -2,7 +2,7 @@
 (*                                                                           *)
 (* Open Source License                                                       *)
 (* Copyright (c) 2018 Dynamic Ledger Solutions, Inc. <contact@tezos.com>     *)
-(* Copyright (c) 2019 Nomadic Labs, <contact@nomadic-labs.com>               *)
+(* Copyright (c) 2020 Nomadic Labs. <contact@nomadic-labs.com>               *)
 (*                                                                           *)
 (* Permission is hereby granted, free of charge, to any person obtaining a   *)
 (* copy of this software and associated documentation files (the "Software"),*)
@@ -48,6 +48,8 @@ type chain_db = {
   active_connections : connection P2p_peer.Table.t;
 }
 
+module CheckpointRequester = Distributed_db_requester.SimpleRequester (Chain_id)
+
 type t = {
   p2p : p2p;
   gid : P2p_peer.Id.t;  (** remote peer id *)
@@ -60,7 +62,16 @@ type t = {
   active_chains : chain_db Chain_id.Table.t;
       (** All chains managed by this peer **)
   unregister : unit -> unit;
+  checkpoint_requester : Block_header.t CheckpointRequester.t;
 }
+
+type checkpoint_handler = CheckpointRequester.handler
+
+let on_checkpoint t chain hook =
+  CheckpointRequester.on_request t.checkpoint_requester chain hook
+
+let clear_checkpoint_handler t handler =
+  CheckpointRequester.clear t.checkpoint_requester handler
 
 (* performs [f chain_db] if the chain is active for the remote peer
    and [chain_db] is the chain_db corresponding to this chain id, otherwise
@@ -398,10 +409,9 @@ let handle_msg state msg =
       @@ P2p.try_send state.p2p state.conn
       @@ Checkpoint (chain_id, checkpoint) ;
       Lwt.return_unit
-  | Checkpoint _ ->
-      (* This message is currently unused: it will be used for future
-         bootstrap heuristics. *)
+  | Checkpoint (chain_id, header) ->
       Peer_metadata.incr meta @@ Received_response Checkpoint ;
+      CheckpointRequester.notify state.checkpoint_requester chain_id header ;
       Lwt.return_unit
   | Get_protocol_branch (chain_id, proto_level) -> (
       Peer_metadata.incr meta @@ Received_request Protocol_branch ;
@@ -471,6 +481,7 @@ let run ~register ~unregister p2p disk protocol_db active_chains gid conn =
       peer_active_chains = Chain_id.Table.create 17;
       worker = Lwt.return_unit;
       unregister;
+      checkpoint_requester = CheckpointRequester.create 11;
     }
   in
   Chain_id.Table.iter

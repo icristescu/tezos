@@ -303,3 +303,52 @@ module Raw_protocol =
 
       let precheck _ _ v = Some v
     end)
+
+module SimpleRequester (I : Stdlib.Hashtbl.HashedType) = struct
+  module KeyTable = Hashtbl.Make (I)
+
+  module HandleTable = Hashtbl.Make (struct
+    type t = int
+
+    let hash = Hashtbl.hash
+
+    let equal = ( = )
+  end)
+
+  type index = I.t
+
+  type handler = index * int
+
+  type 'a t = {
+    table : ('a -> unit) HandleTable.t KeyTable.t;
+    handler : int ref;
+  }
+
+  let create n = {table = KeyTable.create n; handler = ref 0}
+
+  let on_request t index hook =
+    incr t.handler ;
+    match KeyTable.find t.table index with
+    | None ->
+        let table = HandleTable.create 11 in
+        HandleTable.add table !(t.handler) hook ;
+        KeyTable.add t.table index table ;
+        (index, !(t.handler))
+    | Some table ->
+        HandleTable.add table !(t.handler) hook ;
+        (index, !(t.handler))
+
+  let notify t index ressource =
+    match KeyTable.find t.table index with
+    | None ->
+        ()
+    | Some table ->
+        HandleTable.iter (fun _ hook -> hook ressource) table
+
+  let clear t (index, handle) =
+    match KeyTable.find t.table index with
+    | None ->
+        ()
+    | Some table ->
+        HandleTable.remove table handle
+end

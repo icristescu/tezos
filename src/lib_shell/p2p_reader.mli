@@ -1,7 +1,7 @@
 (*****************************************************************************)
 (*                                                                           *)
 (* Open Source License                                                       *)
-(* Copyright (c) 2020 Nomadic Labs, <contact@nomadic-labs.com>               *)
+(* Copyright (c) 2020 Nomadic Labs. <contact@nomadic-labs.com>               *)
 (*                                                                           *)
 (* Permission is hereby granted, free of charge, to any person obtaining a   *)
 (* copy of this software and associated documentation files (the "Software"),*)
@@ -182,5 +182,19 @@ val run :
   P2p_peer.Id.t ->
   connection ->
   unit
+
+type checkpoint_handler
+
+(** [on_checkpoint p2p_reader chain hook] registers a hook to be
+   executed when the [p2p_reader] receives a message [Checkpoint chain
+   block] from the remote peer. Called [hook block] on reception. The
+   hook should be free explicitely via the function
+   [clear_checkpoint_handler]. *)
+val on_checkpoint :
+  t -> Chain_id.t -> (Block_header.t -> unit) -> checkpoint_handler
+
+(** [unregister_checkpoint_requester p2p_reader handle] unregisters
+   the hook associated the handle [handle]. *)
+val clear_checkpoint_handler : t -> checkpoint_handler -> unit
 
 val shutdown : t -> unit Lwt.t
