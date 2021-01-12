@@ -129,6 +129,20 @@ module Request : sig
     peer:P2p_peer.Id.t ->
     (Block_header.t option -> 'a Lwt.t) ->
     'a Lwt.t
+
+  (** [get_n_predecessor ?timeout chain_db ~peer hash offset f] sends
+     a [Get_predecessor_header hash offset] message to
+     [peer]. [chain_id] is the identifier for [chain_db]. Expected
+     answer is a a [Predecessor_header hash offset header] message. On
+     reception the function [f] is called with the [header]
+     received. *)
+  val get_predecessor_header :
+    ?timeout:Ptime.Span.t ->
+    chain_db ->
+    peer:P2p_peer.Id.t ->
+    Block_hash.t ->
+    Int32.t ->
+    Block_header.t option Lwt.t
 end
 
 module Advertise : sig

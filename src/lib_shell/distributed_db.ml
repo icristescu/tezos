@@ -507,6 +507,35 @@ module Request = struct
         >>= fun header_opt ->
         P2p_reader.clear_checkpoint_handler p2p_reader handle ;
         f header_opt
+
+  let get_predecessor_header ?timeout chain_db ~peer header offset =
+    let meta = P2p.get_peer_metadata chain_db.global_db.p2p peer in
+    let (t, u) = Lwt.task () in
+    match P2p_peer.Table.find chain_db.global_db.p2p_readers peer with
+    | None ->
+        Lwt.return_none
+    | Some p2p_reader ->
+        let handle =
+          P2p_reader.on_predecessor_header
+            p2p_reader
+            (header, offset)
+            (fun hash -> Lwt.wakeup_later u hash)
+        in
+        Peer_metadata.incr meta (Sent_request Predecessor_header) ;
+        send chain_db ~peer @@ Get_predecessor_header (header, offset) ;
+        let task =
+          match timeout with
+          | Some timeout ->
+              Lwt.pick
+                [ (Systime_os.sleep timeout >>= fun () -> Lwt.return_none);
+                  t >>= Lwt.return_some ]
+          | None ->
+              t >>= Lwt.return_some
+        in
+        Lwt.protected task
+        >>= fun header_opt ->
+        P2p_reader.clear_predecessor_header_handler p2p_reader handle ;
+        Lwt.return header_opt
 end
 
 module Advertise = struct
