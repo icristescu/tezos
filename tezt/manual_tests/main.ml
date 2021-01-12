@@ -30,4 +30,5 @@
 let () =
   Migration.register () ;
   (* Test.run () should be the last statement, don't register afterwards! *)
+  Bootstrap.register () ;
   Test.run ()
