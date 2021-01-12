@@ -62,6 +62,7 @@ type argument =
   | Synchronisation_threshold of int  (** [--synchronisation-threshold] *)
   | Connections of int  (** [--connections] *)
   | Private_mode  (** [--private-mode] *)
+  | No_bootstrap_peers  (** [--no-bootstrap-peers] *)
   | Peer of string  (** [--peer] *)
 
 (** Tezos node states. *)

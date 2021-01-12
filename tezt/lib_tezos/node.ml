@@ -34,6 +34,7 @@ type argument =
   | Synchronisation_threshold of int
   | Connections of int
   | Private_mode
+  | No_bootstrap_peers
   | Peer of string
 
 let make_argument = function
@@ -57,6 +58,8 @@ let make_argument = function
       ["--connections"; string_of_int x]
   | Private_mode ->
       ["--private-mode"]
+  | No_bootstrap_peers ->
+      ["--no-bootstrap-peers"]
   | Peer x ->
       ["--peer"; x]
 
