@@ -197,4 +197,21 @@ val on_checkpoint :
    the hook associated the handle [handle]. *)
 val clear_checkpoint_handler : t -> checkpoint_handler -> unit
 
+type predecessor_handler
+
+(** [on_checkpoint p2p_reader chain hook] registers a hook to be
+   executed when the [p2p_reader] receives a message
+   [Predecessor_header (hash,offset,header) from the remote
+   peer. Called [hook header] on reception. The hook should be free
+   explicitely via the function [clear_predecessor_header_handler]. *)
+val on_predecessor_header :
+  t ->
+  Block_hash.t * Int32.t ->
+  (Block_header.t -> unit) ->
+  predecessor_handler
+
+(** [clear_predecessor_header_handler p2p_reader handle] unregisters
+   the hook associated the handle [handler]. *)
+val clear_predecessor_header_handler : t -> predecessor_handler -> unit
+
 val shutdown : t -> unit Lwt.t

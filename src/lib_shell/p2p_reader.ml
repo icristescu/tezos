@@ -48,7 +48,18 @@ type chain_db = {
   active_connections : connection P2p_peer.Table.t;
 }
 
+module PredecessorIndex = struct
+  type t = Block_hash.t * Int32.t
+
+  let hash = Stdlib.Hashtbl.hash
+
+  let equal (header, lvl) (header', lvl') =
+    Block_hash.equal header header' && Int32.equal lvl lvl'
+end
+
 module CheckpointRequester = Distributed_db_requester.SimpleRequester (Chain_id)
+module PredecessorRequester =
+  Distributed_db_requester.SimpleRequester (PredecessorIndex)
 
 type t = {
   p2p : p2p;
@@ -63,6 +74,7 @@ type t = {
       (** All chains managed by this peer **)
   unregister : unit -> unit;
   checkpoint_requester : Block_header.t CheckpointRequester.t;
+  predecessor_header_requesters : Block_header.t PredecessorRequester.t;
 }
 
 type checkpoint_handler = CheckpointRequester.handler
@@ -72,6 +84,14 @@ let on_checkpoint t chain hook =
 
 let clear_checkpoint_handler t handler =
   CheckpointRequester.clear t.checkpoint_requester handler
+
+type predecessor_handler = PredecessorRequester.handler
+
+let on_predecessor_header t index hook =
+  PredecessorRequester.on_request t.predecessor_header_requesters index hook
+
+let clear_predecessor_header_handler t handler =
+  PredecessorRequester.clear t.predecessor_header_requesters handler
 
 (* performs [f chain_db] if the chain is active for the remote peer
    and [chain_db] is the chain_db corresponding to this chain id, otherwise
@@ -449,10 +469,14 @@ let handle_msg state msg =
           @@ P2p.try_send state.p2p state.conn
           @@ Predecessor_header (block_hash, offset, header) ;
           Lwt.return_unit )
-  | Predecessor_header (_block_hash, _offset, _header) ->
+  | Predecessor_header (block_hash, offset, header) ->
       (* This message is currently unused: it will be used to improve
          bootstrapping. *)
       Peer_metadata.incr meta @@ Received_response Predecessor_header ;
+      PredecessorRequester.notify
+        state.predecessor_header_requesters
+        (block_hash, offset)
+        header ;
       Lwt.return_unit
 
 let rec worker_loop state =
@@ -482,6 +506,7 @@ let run ~register ~unregister p2p disk protocol_db active_chains gid conn =
       worker = Lwt.return_unit;
       unregister;
       checkpoint_requester = CheckpointRequester.create 11;
+      predecessor_header_requesters = PredecessorRequester.create 11;
     }
   in
   Chain_id.Table.iter
