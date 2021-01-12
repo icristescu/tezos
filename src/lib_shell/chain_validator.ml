@@ -48,8 +48,18 @@ end
 
 type synchronisation_limits = {latency : int; threshold : int}
 
+type checkpoint_limits = {
+  threshold : int;
+  expected : int;
+  request_checkpoint_timeout : Time.System.Span.t;
+  checkpoint_too_old : Time.System.Span.t;
+  delay_on_failure : Time.System.Span.t;
+}
+
 type limits = {
   synchronisation : synchronisation_limits;
+  checkpoint : checkpoint_limits;
+  bootstrapper : Bootstrapper_configuration.limits;
   worker_limits : Worker_types.limits;
 }
 
@@ -73,6 +83,12 @@ module Types = struct
     limits : limits;
   }
 
+  type bootstrapper_state = {
+    bootstrapper : Bootstrapper.t;
+    header_requester : Int32.t Distributed_db.Request_worker.t;
+    operations_requester : Block_header.t Distributed_db.Request_worker.t;
+  }
+
   type state = {
     parameters : parameters;
     (* This state should be updated everytime a block is validated or
@@ -85,12 +101,16 @@ module Types = struct
        the status was [Synchronized] at least once. When this flag is
        true, the node starts its mempool. *)
     mutable bootstrapped : bool;
+    mutable above_target : bool;
+    mutable last_incremented_head : Block_header.t;
+    checkpoint_consensus : Block_header.t Consensus_heuristic.Worker.t;
     bootstrapped_waiter : unit Lwt.t;
     bootstrapped_wakener : unit Lwt.u;
     valid_block_input : State.Block.t Lwt_watcher.input;
     new_head_input : State.Block.t Lwt_watcher.input;
     mutable child : (state * (unit -> unit Lwt.t (* shutdown *))) option;
     mutable prevalidator : Prevalidator.t option;
+    bootstrapper : bootstrapper_state;
     active_peers :
       (Peer_validator.t, Error_monad.tztrace) P2p_peer.Error_table.t;
   }
@@ -132,6 +152,39 @@ let shutdown_child nv active_chains =
       nv.child <- None ;
       Lwt.return_unit)
     nv.child
+
+let with_consensus_checkpoint nv f =
+  (* Because this function may be used inside `Error_monad.dont_wait`
+     we catch here the Canceled event so that it is not caught by the
+     `Error_monad.dont_wait` function. *)
+  Lwt.catch
+    (fun () ->
+      Consensus_heuristic.Worker.wait nv.checkpoint_consensus
+      >>= fun checkpoint -> f checkpoint)
+    (function Lwt.Canceled -> return_unit | exn -> Lwt.fail exn)
+
+let may_notify_pv pv f =
+  match Peer_validator.status pv with
+  | Worker_types.Running _ ->
+      f pv
+  | Worker_types.Closing (_, _)
+  | Worker_types.Closed (_, _, _)
+  | Worker_types.Launching _ ->
+      ()
+
+let update_above_target nv (head : Block_header.t) (target : Block_header.t) =
+  if head.shell.level >= target.shell.level && not nv.above_target then (
+    nv.above_target <- true ;
+    P2p_peer.Error_table.fold_resolved
+      (fun _ pv () -> may_notify_pv pv Peer_validator.notify_target_reached)
+      nv.active_peers
+      () )
+  else if head.shell.level < target.shell.level && nv.above_target then (
+    nv.above_target <- false ;
+    P2p_peer.Error_table.fold_resolved
+      (fun _ pv () -> may_notify_pv pv Peer_validator.notify_behind_target)
+      nv.active_peers
+      () )
 
 (* Update the synchronisation state and if it is relevant, set the
    bootstrapped flag to true. Assume:
@@ -195,6 +248,34 @@ let notify_new_foreign_block w peer_id block =
   notify_new_block w block ;
   update_synchronisation_state w (State.Block.header block, peer_id)
 
+let init_checkpoint_consensus parameters peers_table request_checkpoint =
+  let threshold = parameters.limits.checkpoint.threshold in
+  let expected = parameters.limits.checkpoint.expected in
+  let job () =
+    let checkpoint = Consensus_heuristic.create ~threshold ~expected () in
+    P2p_peer.Error_table.fold_keys
+      (fun peer _ ->
+        let timeout =
+          parameters.limits.checkpoint.request_checkpoint_timeout
+        in
+        request_checkpoint timeout peer (function
+            | None ->
+                Lwt.return_unit
+            | Some header ->
+                Consensus_heuristic.update checkpoint (peer, header) ;
+                Lwt.return_unit))
+      peers_table
+      Lwt.return_unit
+    >>= fun () -> Lwt.return (Consensus_heuristic.get_state checkpoint)
+  in
+  Consensus_heuristic.Worker.create
+    ~name:"Checkpoint heuristic"
+    ~age_limit:(fun () ->
+      Systime_os.sleep parameters.limits.checkpoint.checkpoint_too_old)
+    ~job
+    ~restart_delay:(fun () ->
+      Systime_os.sleep parameters.limits.checkpoint.delay_on_failure)
+
 let with_activated_peer_validator w peer_id f =
   let nv = Worker.state w in
   P2p_peer.Error_table.find_or_make nv.active_peers peer_id (fun () ->
@@ -202,6 +283,7 @@ let with_activated_peer_validator w peer_id f =
         ~notify_new_block:(notify_new_foreign_block w peer_id)
         ~notify_termination:(fun _pv ->
           P2p_peer.Error_table.remove nv.active_peers peer_id)
+        ~target_reached:nv.above_target
         nv.parameters.peer_validator_limits
         nv.parameters.block_validator
         nv.parameters.chain_db
@@ -489,6 +571,11 @@ let on_request (type a) w start_testchain active_chains spawn_child
       may_switch_test_chain w active_chains spawn_child block
     else Lwt.return_unit )
     >>= fun () ->
+    nv.last_incremented_head <- State.Block.header block ;
+    Consensus_heuristic.Worker.on_next_consensus
+      nv.checkpoint_consensus
+      (fun consensus_checkpoint ->
+        update_above_target nv nv.last_incremented_head consensus_checkpoint) ;
     Lwt_watcher.notify nv.new_head_input block ;
     if Block_hash.equal head_hash block_header.shell.predecessor then
       return Event.Head_increment
@@ -520,6 +607,8 @@ let on_close w =
       nv.active_peers
       []
   in
+  Consensus_heuristic.Worker.cancel nv.checkpoint_consensus ;
+  Bootstrapper.cancel nv.bootstrapper.bootstrapper ;
   Lwt.join
     ( Option.iter_s Prevalidator.shutdown nv.prevalidator
     :: Option.iter_s (fun (_, shutdown) -> shutdown ()) nv.child
@@ -568,6 +657,47 @@ let on_launch w _ parameters =
     | Not_synchronised ->
         false
   in
+  let active_peers = P2p_peer.Error_table.create 50 in
+  let checkpoint_requester timeout peer f =
+    Distributed_db.Request.checkpoint ~timeout parameters.chain_db ~peer f
+  in
+  let checkpoint_consensus =
+    init_checkpoint_consensus parameters active_peers checkpoint_requester
+  in
+  let header_requester =
+    Distributed_db.Request_worker.create
+      parameters.chain_db
+      ~on_failure:(fun _ _ ->
+        (*FIXME: implemented in a next commit *) Lwt.return_unit)
+  in
+  let operations_requester =
+    Distributed_db.Request_worker.create
+      parameters.chain_db
+      ~on_failure:(fun _ _ ->
+        (*FIXME: implemented in a next commit *) Lwt.return_unit)
+  in
+  let bootstrapper_parameters =
+    {
+      Bootstrapper_configuration.data_dir = parameters.data_dir;
+      chain_state = parameters.chain_state;
+      chain_db = parameters.chain_db;
+      operations_requester;
+      header_requester;
+      notify_new_block = notify_new_block w;
+      block_validator = parameters.block_validator;
+    }
+  in
+  let bootstrapper_configuration =
+    Bootstrapper_configuration.configuration
+      parameters.limits.bootstrapper
+      bootstrapper_parameters
+  in
+  Bootstrapper.create bootstrapper_configuration
+  >>=? fun bootstrapper ->
+  State.read_chain_data
+    parameters.chain_state
+    (fun _ {State.current_head; _} -> Lwt.return current_head)
+  >>= fun head ->
   let nv =
     {
       parameters;
@@ -576,12 +706,16 @@ let on_launch w _ parameters =
       bootstrapped_wakener;
       bootstrapped_waiter;
       bootstrapped;
+      above_target = false;
       synchronisation_state;
       current_status = None;
-      active_peers = P2p_peer.Error_table.create 50;
+      checkpoint_consensus;
+      active_peers;
       (* TODO use [2 * max_connection] *)
       child = None;
       prevalidator = None (* the prevalidator may be instantiated next *);
+      bootstrapper = {bootstrapper; header_requester; operations_requester};
+      last_incremented_head = State.Block.header head;
     }
   in
   (* Start the prevalidator when the chain becomes bootstrapped *)
@@ -592,6 +726,9 @@ let on_launch w _ parameters =
           Chain.head parameters.chain_state
           >>= fun head -> may_instantiate_prevalidator nv ~head)
         (fun exc -> ignore exc)) ;
+  Consensus_heuristic.Worker.on_all_consensus
+    checkpoint_consensus
+    (fun target -> update_above_target nv nv.last_incremented_head target) ;
   if nv.bootstrapped then Lwt.wakeup_later nv.bootstrapped_wakener () ;
   Distributed_db.set_callback
     parameters.chain_db
@@ -612,10 +749,14 @@ let on_launch w _ parameters =
               let (block, _) = (locator : Block_locator.t :> _ * _) in
               check_and_update_synchronisation_state w (block, peer_id)
               >>= fun () ->
-              with_activated_peer_validator w peer_id
-              @@ fun pv ->
-              Peer_validator.notify_branch pv locator ;
-              return_unit));
+              with_activated_peer_validator w peer_id (fun pv ->
+                  Peer_validator.notify_branch pv locator ;
+                  with_consensus_checkpoint nv (fun consensus_checkpoint ->
+                      if not nv.above_target then
+                        Bootstrapper.notify_target
+                          bootstrapper
+                          ~target:consensus_checkpoint ;
+                      return_unit))));
       notify_head =
         (fun peer_id block ops ->
           Error_monad.dont_wait
@@ -633,15 +774,21 @@ let on_launch w _ parameters =
               >>= fun () ->
               with_activated_peer_validator w peer_id (fun pv ->
                   Peer_validator.notify_head pv block ;
-                  return_unit)
-              >>=? fun () ->
-              (* TODO notify prevalidator only if head is known ??? *)
-              match nv.prevalidator with
-              | Some prevalidator ->
-                  Prevalidator.notify_operations prevalidator peer_id ops
-                  >>= fun () -> return_unit
-              | None ->
-                  return_unit));
+                  with_consensus_checkpoint nv (fun consensus_checkpoint ->
+                      if not nv.above_target then
+                        Bootstrapper.notify_target
+                          bootstrapper
+                          ~target:consensus_checkpoint ;
+                      (* TODO notify prevalidator only if head is known ??? *)
+                      match nv.prevalidator with
+                      | Some prevalidator ->
+                          Prevalidator.notify_operations
+                            prevalidator
+                            peer_id
+                            ops
+                          >>= fun () -> return_unit
+                      | None ->
+                          return_unit))));
       disconnection =
         (fun peer_id ->
           Error_monad.dont_wait

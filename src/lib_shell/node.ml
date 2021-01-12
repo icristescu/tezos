@@ -137,10 +137,33 @@ let default_peer_validator_limits =
     worker_limits = default_workers_limits;
   }
 
+let default_checkpoint_limits =
+  let open Chain_validator in
+  {
+    threshold = 10;
+    expected = 15;
+    request_checkpoint_timeout = Time.System.Span.of_seconds_exn 5.;
+    checkpoint_too_old = Time.System.Span.of_seconds_exn 1200.;
+    delay_on_failure = Time.System.Span.of_seconds_exn 60.;
+  }
+
+let default_bootstrapper_limits =
+  let open Bootstrapper_configuration in
+  {
+    fetching_headers_parallel_jobs = 10;
+    fetching_headers_timeout = Time.System.Span.of_seconds_exn 30.;
+    fetching_operations_parallel_jobs = 2;
+    fetching_operations_timeout = Time.System.Span.of_seconds_exn 30.;
+    delay_when_fetching_failed = Time.System.Span.of_seconds_exn 1.;
+    range_size = 5000;
+  }
+
 let default_chain_validator_limits =
   let open Chain_validator in
   {
     synchronisation = {latency = 150; threshold = 4};
+    checkpoint = default_checkpoint_limits;
+    bootstrapper = default_bootstrapper_limits;
     worker_limits = default_workers_limits;
   }
 

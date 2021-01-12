@@ -92,6 +92,9 @@ module Types = struct
     mutable pipeline : Bootstrap_pipeline.t option;
     mutable last_validated_head : Block_header.t;
     mutable last_advertised_head : Block_header.t;
+    mutable target_reached : bool;
+    mutable last_advertised_branch :
+      (Block_hash.t * Block_locator.t * Block_locator.seed) option;
   }
 
   let pipeline_length = function
@@ -315,10 +318,16 @@ let on_request (type a) w (req : a Request.t) : a tzresult Lwt.t =
   | Request.New_head (hash, header) ->
       Worker.log_event w (Processing_new_head {peer = pv.peer_id; hash})
       >>= fun () -> may_validate_new_head w hash header
-  | Request.New_branch (hash, locator, _seed) ->
+  | Request.New_branch (hash, locator, seed) ->
       (* TODO penalize empty locator... ?? *)
       Worker.log_event w (Processing_new_branch {peer = pv.peer_id; hash})
-      >>= fun () -> may_validate_new_branch w hash locator
+      >>= fun () ->
+      if pv.target_reached then (
+        pv.last_advertised_branch <- None ;
+        may_validate_new_branch w hash locator )
+      else (
+        pv.last_advertised_branch <- Some (hash, locator, seed) ;
+        return_unit )
 
 let on_completion w r _ st =
   Worker.log_event w (Event.Request (Request.view r, st, None))
@@ -397,7 +406,7 @@ let on_close w =
   pv.parameters.notify_termination () ;
   Lwt.return_unit
 
-let on_launch _ name parameters =
+let on_launch target_reached _ name parameters =
   let chain_state = Distributed_db.chain_state parameters.chain_db in
   State.Block.read_opt chain_state (State.Chain.genesis chain_state).block
   >|= WithExceptions.Option.get ~loc:__LOC__
@@ -409,6 +418,8 @@ let on_launch _ name parameters =
       pipeline = None;
       last_validated_head = State.Block.header genesis;
       last_advertised_head = State.Block.header genesis;
+      target_reached;
+      last_advertised_branch = None;
     }
   and notify_new_block block =
     pv.last_validated_head <- State.Block.header block ;
@@ -438,8 +449,8 @@ let table =
   Worker.create_table (Dropbox {merge})
 
 let create ?(notify_new_block = fun _ -> ())
-    ?(notify_termination = fun _ -> ()) limits block_validator chain_db peer_id
-    =
+    ?(notify_termination = fun _ -> ()) ~target_reached limits block_validator
+    chain_db peer_id =
   let name = (State.Chain.id (Distributed_db.chain_state chain_db), peer_id) in
   let parameters =
     {chain_db; notify_termination; block_validator; notify_new_block; limits}
@@ -447,7 +458,7 @@ let create ?(notify_new_block = fun _ -> ())
   let module Handlers = struct
     type self = t
 
-    let on_launch = on_launch
+    let on_launch = on_launch target_reached
 
     let on_request = on_request
 
@@ -480,6 +491,19 @@ let notify_branch w locator =
 let notify_head w header =
   let hash = Block_header.hash header in
   Worker.Dropbox.put_request w (New_head (hash, header))
+
+let notify_target_reached w =
+  let pv = Worker.state w in
+  pv.target_reached <- true ;
+  match pv.last_advertised_branch with
+  | Some (hash, locator, seed) ->
+      Worker.Dropbox.put_request w (New_branch (hash, locator, seed))
+  | None ->
+      ()
+
+let notify_behind_target w =
+  let pv = Worker.state w in
+  pv.target_reached <- false
 
 let shutdown w = Worker.shutdown w
 

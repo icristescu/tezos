@@ -24,6 +24,41 @@
 (*                                                                           *)
 (*****************************************************************************)
 
+(** {2 Peer validator} *)
+
+(** Peer validator is in charge to validate new branches or new heads
+   along one peer when the current head of the node is above the
+   target (see [Chain_validator]). There is one peer validator worker
+   by peer and by chain.
+
+   The peer validator can handle two asynchronous request:
+
+   - A new head advertised by the peer: [notify_head]
+
+   - A new branch advertised by the peer: [notify_branch]
+
+   The peer validator handles one asynchronous request at a
+   time. Also, at most one request can be on hold. When a new request
+   is coming while there is one on hold, the peer validator prioritizes
+   the last advertised branch not handled if possible, otherwise it
+   will take the last advertised head.
+
+   Moreover, if it handles two synchronous requests:
+
+   - Notify that the current head is equal or above the target:
+   [notify_target_reached]
+
+   - Notify that the current head is behind the target:
+   [notify_behind_target]
+
+   The peer validator can validate a branch only when the target is
+   reached. Otherwise, the last advertised branch is memoized. Once
+   the target is reached, if a branch was advertised, it will start to
+   validate this branch.
+
+   The peer validator sends a heartbeat if we did not receive any news
+   from the peer for 90 seconds.  *)
+
 type t
 
 type limits = {
@@ -39,6 +74,7 @@ val peer_id : t -> P2p_peer.Id.t
 val create :
   ?notify_new_block:(State.Block.t -> unit) ->
   ?notify_termination:(unit -> unit) ->
+  target_reached:bool ->
   limits ->
   Block_validator.t ->
   Distributed_db.chain_db ->
@@ -67,3 +103,7 @@ val last_events :
 
 val pipeline_length :
   t -> Peer_validator_worker_state.Worker_state.pipeline_length
+
+val notify_target_reached : t -> unit
+
+val notify_behind_target : t -> unit

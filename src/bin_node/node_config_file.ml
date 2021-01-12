@@ -895,50 +895,162 @@ let synchronisation_heuristic_encoding default_latency default_threshold =
           uint8
           default_threshold))
 
+let checkpoint_encoding default =
+  let open Data_encoding in
+  conv
+    (fun { Chain_validator.expected;
+           threshold;
+           request_checkpoint_timeout;
+           checkpoint_too_old;
+           delay_on_failure } ->
+      ( expected,
+        threshold,
+        request_checkpoint_timeout,
+        checkpoint_too_old,
+        delay_on_failure ))
+    (fun ( expected,
+           threshold,
+           request_checkpoint_timeout,
+           checkpoint_too_old,
+           delay_on_failure ) ->
+      {
+        expected;
+        threshold;
+        request_checkpoint_timeout;
+        checkpoint_too_old;
+        delay_on_failure;
+      })
+    (obj5
+       (dft "checkpoint_expected" uint16 default.Chain_validator.expected)
+       (dft "checkpoint_threshold" uint8 default.threshold)
+       (dft
+          "request_checkpoint_timeout"
+          Time.System.Span.encoding
+          default.request_checkpoint_timeout)
+       (dft
+          "checkpoint_too_old"
+          Time.System.Span.encoding
+          default.checkpoint_too_old)
+       (dft
+          "delay_on_failure"
+          Time.System.Span.encoding
+          default.delay_on_failure))
+
+let bootstrapper_encoding default =
+  let open Data_encoding in
+  let open Bootstrapper_configuration in
+  conv
+    (fun { fetching_headers_parallel_jobs;
+           fetching_headers_timeout;
+           fetching_operations_parallel_jobs;
+           fetching_operations_timeout;
+           delay_when_fetching_failed;
+           range_size } ->
+      ( fetching_headers_parallel_jobs,
+        fetching_headers_timeout,
+        fetching_operations_parallel_jobs,
+        fetching_operations_timeout,
+        delay_when_fetching_failed,
+        range_size ))
+    (fun ( fetching_headers_parallel_jobs,
+           fetching_headers_timeout,
+           fetching_operations_parallel_jobs,
+           fetching_operations_timeout,
+           delay_when_fetching_failed,
+           range_size ) ->
+      {
+        fetching_headers_parallel_jobs;
+        fetching_headers_timeout;
+        fetching_operations_parallel_jobs;
+        fetching_operations_timeout;
+        delay_when_fetching_failed;
+        range_size;
+      })
+    (obj6
+       (dft
+          "fetching_haders_parallel_jobs"
+          uint8
+          default.fetching_headers_parallel_jobs)
+       (dft
+          "fetching_headers_timeout"
+          Time.System.Span.encoding
+          default.fetching_headers_timeout)
+       (dft
+          "fetching_operations_parallel_jobs"
+          uint8
+          default.fetching_operations_parallel_jobs)
+       (dft
+          "fetching_operations_timeout"
+          Time.System.Span.encoding
+          default.fetching_operations_timeout)
+       (dft
+          "delay_when_fetching_failed"
+          Time.System.Span.encoding
+          default.delay_when_fetching_failed)
+       (dft "range_size" uint16 default.range_size))
+
 let chain_validator_limits_encoding =
   let open Data_encoding in
   conv
-    (fun {Chain_validator.synchronisation; worker_limits} ->
-      (synchronisation, worker_limits))
-    (fun (synchronisation, worker_limits) -> {synchronisation; worker_limits})
+    (fun { Chain_validator.checkpoint;
+           synchronisation;
+           bootstrapper;
+           worker_limits } ->
+      ((checkpoint, bootstrapper), (synchronisation, worker_limits)))
+    (fun ((checkpoint, bootstrapper), (synchronisation, worker_limits)) ->
+      {synchronisation; bootstrapper; checkpoint; worker_limits})
     (merge_objs
-       (* Use a union to support both the deprecated
+       (obj2
+          (dft
+             "checkpoint_heuristic"
+             (checkpoint_encoding
+                default_shell.chain_validator_limits.checkpoint)
+             default_shell.chain_validator_limits.checkpoint)
+          (dft
+             "bootstrapper"
+             (bootstrapper_encoding
+                default_shell.chain_validator_limits.bootstrapper)
+             default_shell.chain_validator_limits.bootstrapper))
+       (merge_objs
+          (* Use a union to support both the deprecated
           bootstrap_threshold and the new synchronisation_threshold
           options when parsing.  When printing, use the new
           synchronisation_threshold option. *)
-       (union
-          [ case
-              ~title:"synchronisation_heuristic_encoding"
-              Json_only
-              (synchronisation_heuristic_encoding
-                 default_shell.chain_validator_limits.synchronisation.latency
-                 default_shell.chain_validator_limits.synchronisation.threshold)
-              (fun x -> Some x)
-              (fun x -> x);
-            case
-              ~title:"legacy_bootstrap_threshold_encoding"
-              Json_only
-              (obj1
-                 (dft
-                    "bootstrap_threshold"
-                    ~description:
-                      "[DEPRECATED] Set the number of peers with whom a chain \
-                       synchronisation must be completed to bootstrap the \
-                       node."
-                    uint8
-                    4))
-              (fun _ -> None) (* This is used for legacy *)
-              (fun x ->
-                Chain_validator.
-                  {
-                    threshold = x;
-                    latency =
-                      default_shell.chain_validator_limits.synchronisation
-                        .latency;
-                  }) ])
-       (worker_limits_encoding
-          default_shell.chain_validator_limits.worker_limits.backlog_size
-          default_shell.chain_validator_limits.worker_limits.backlog_level))
+          (union
+             [ case
+                 ~title:"synchronisation_heuristic_encoding"
+                 Json_only
+                 (synchronisation_heuristic_encoding
+                    default_shell.chain_validator_limits.synchronisation
+                      .latency
+                    default_shell.chain_validator_limits.synchronisation
+                      .threshold)
+                 (fun x -> Some x)
+                 (fun x -> x);
+               case
+                 ~title:"legacy_bootstrap_threshold_encoding"
+                 Json_only
+                 (obj1
+                    (dft
+                       "bootstrap_threshold"
+                       ~description:
+                         "[DEPRECATED] Set the number of peers with whom a \
+                          chain synchronisation must be completed to \
+                          bootstrap the node."
+                       uint8
+                       4))
+                 (fun _ -> None) (* This is used for legacy *)
+                 (fun x ->
+                   Chain_validator.
+                     {
+                       threshold = x;
+                       latency =
+                         default_shell.chain_validator_limits.synchronisation
+                           .latency;
+                     }) ])
+          (worker_limits_encoding
+             default_shell.chain_validator_limits.worker_limits.backlog_size
+             default_shell.chain_validator_limits.worker_limits.backlog_level)))
 
 let shell =
   let open Data_encoding in

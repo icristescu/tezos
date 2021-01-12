@@ -2,7 +2,7 @@
 (*                                                                           *)
 (* Open Source License                                                       *)
 (* Copyright (c) 2018 Dynamic Ledger Solutions, Inc. <contact@tezos.com>     *)
-(* Copyright (c) 2018 Nomadic Labs, <contact@nomadic-labs.com>               *)
+(* Copyright (c) 2020 Nomadic Labs, <contact@nomadic-labs.com>               *)
 (*                                                                           *)
 (* Permission is hereby granted, free of charge, to any person obtaining a   *)
 (* copy of this software and associated documentation files (the "Software"),*)
@@ -24,6 +24,42 @@
 (*                                                                           *)
 (*****************************************************************************)
 
+(** {2 Chain validator} *)
+
+(** The chain validator is the conductor of the validation for a given
+   chain. It receives messages from the [distributed_db] then assigns
+   these messages to the different components of the validation
+   subsystem.
+
+   It manages:
+
+   - A prevalidator to handle operations received through the network
+
+   - A bootstrapper to handle (potentially long) branches when the
+   node's head is behind the target.
+
+   - A set of peer validators to handles blocks and branches received
+   through the network when the node's head is above or equal to the
+   target
+
+   The target is an internal notion defined by the
+   [chain_validator]. The specification of the target is a block which
+   must be part of the main chain. Currently, the chain validator uses
+   a checkpoint heuristic to define this target. The checkpoint
+   heuristic asks the checkpoint of the remotes peers and check
+   whether there is a consensus. The target is defined only if there
+   is a consensus. This is why if no consensus can be reached, the
+   checkpoint heuristic is run again after a delay.
+
+   The chain validator also uses a synchronisation heuristic to decide
+   whether the node is synchronised with the remote peers but also to
+   decide when it should starts the [prevalidator]. Indeed, while the
+   node is not synchronised there is no need to validate operations
+   from the network. Hence the [prevalidator] starts only when the
+   node is [bootstrapped], which means that the status of the
+   [synchronisation heuristic] was [Synchronised] at least once (see
+   the [Synchronisation_heuristic] module). *)
+
 type t
 
 (** Constants parameterizing the bootstrap heuristics. *)
@@ -40,8 +76,18 @@ type synchronisation_limits = {
      not.  *)
 }
 
+type checkpoint_limits = {
+  threshold : int;
+  expected : int;
+  request_checkpoint_timeout : Time.System.Span.t;
+  checkpoint_too_old : Time.System.Span.t;
+  delay_on_failure : Time.System.Span.t;
+}
+
 type limits = {
   synchronisation : synchronisation_limits;
+  checkpoint : checkpoint_limits;
+  bootstrapper : Bootstrapper_configuration.limits;
   worker_limits : Worker_types.limits;
 }
 
