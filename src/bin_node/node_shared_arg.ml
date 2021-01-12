@@ -592,11 +592,19 @@ let read_and_patch_config_file ?(may_override_network = false)
         min_connections,
         expected_connections,
         max_connections,
-        peer_table_size ) =
+        peer_table_size,
+        checkpoint_heuristic_threshold,
+        checkpoint_heuristic_expected ) =
     match connections with
     | None ->
-        (synchronisation_threshold, None, None, None, peer_table_size)
-    | Some x -> (
+        ( synchronisation_threshold,
+          None,
+          None,
+          None,
+          peer_table_size,
+          None,
+          None )
+    | Some x ->
         let peer_table_size =
           match peer_table_size with
           | None ->
@@ -604,28 +612,35 @@ let read_and_patch_config_file ?(may_override_network = false)
           | Some _ ->
               peer_table_size
         in
-        (* connections sets a new value for the
-           [synchronisation_threshold] except if a value for it was
-           specified on the command line. *)
-        match synchronisation_threshold with
-        | None ->
-            (* We want to synchronise with at least 2 peers and to a
+        (* We want to synchronise with at least 2 peers and to a
               number of people proportional to the number of peers we
               are connected with. Because a heuristic is used, we only
               need to be synchronised with a sufficiently large number
               of our peers. (x/4) is enough if the
               `synchronisation-threshold` is not set. *)
-            ( Some (max (x / 4) 2),
-              Some (x / 2),
-              Some x,
-              Some (3 * x / 2),
-              peer_table_size )
-        | Some threshold ->
-            ( Some threshold,
-              Some (x / 2),
-              Some x,
-              Some (3 * x / 2),
-              peer_table_size ) )
+
+        (* connections sets a new value for the
+           [synchronisation_threshold] except if a value for it was
+           specified on the command line. *)
+        let synchronisation_threshold =
+          Option.value synchronisation_threshold ~default:(max (x / 4) 2)
+        in
+        let min_connections = x / 2 in
+        let expected_connections = x in
+        let max_connections = 3 * x / 2 in
+        let checkpoint_heuristic_threshold =
+          max 1 (min ((expected_connections / 2) + 1) 10)
+        in
+        let checkpoint_heuristic_expected =
+          max 1 (min expected_connections 15)
+        in
+        ( Some synchronisation_threshold,
+          Some min_connections,
+          Some expected_connections,
+          Some max_connections,
+          peer_table_size,
+          Some checkpoint_heuristic_threshold,
+          Some checkpoint_heuristic_expected )
   in
   Node_config_file.update
     ?data_dir
@@ -649,6 +664,8 @@ let read_and_patch_config_file ?(may_override_network = false)
     ?rpc_tls
     ?log_output
     ?synchronisation_threshold
+    ?checkpoint_heuristic_threshold
+    ?checkpoint_heuristic_expected
     ?history_mode
     ?network
     ?latency

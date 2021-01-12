@@ -116,6 +116,8 @@ val update :
   ?rpc_tls:tls ->
   ?log_output:Lwt_log_sink_unix.Output.t ->
   ?synchronisation_threshold:int ->
+  ?checkpoint_heuristic_threshold:int ->
+  ?checkpoint_heuristic_expected:int ->
   ?history_mode:History_mode.t ->
   ?network:blockchain_network ->
   ?latency:int ->
