@@ -29,7 +29,7 @@
 
     Don't use it directly to create files, use [file] or [dir] instead.
     Use this value only in messages to users. *)
-val main_dir : string
+val main_dir : unit -> string
 
 (** Get a temporary file name.
 

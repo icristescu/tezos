@@ -34,11 +34,11 @@ let dirs = ref []
 
 let files = ref []
 
-let main_dir =
+let main_dir () =
   Filename.get_temp_dir_name () // ("tezt-" ^ string_of_int (Unix.getpid ()))
 
 let file_aux ?(perms = 0o755) base_name =
-  let filename = main_dir // base_name in
+  let filename = main_dir () // base_name in
   let rec create_parent filename =
     let parent = Filename.dirname filename in
     if String.length parent < String.length filename then (
