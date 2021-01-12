@@ -1303,6 +1303,7 @@ let update ?data_dir ?min_connections ?expected_connections ?max_connections
     ?(enable_testchain = false) ?(cors_origins = []) ?(cors_headers = [])
     ?rpc_tls ?log_output ?synchronisation_threshold
     ?checkpoint_heuristic_threshold ?checkpoint_heuristic_expected
+    ?bootstrapper_headers_parallel_jobs ?bootstrapper_operations_parallel_jobs
     ?history_mode ?network ?latency cfg =
   let data_dir = Option.value ~default:cfg.data_dir data_dir in
   Node_data_version.ensure_data_dir data_dir
@@ -1386,7 +1387,29 @@ let update ?data_dir ?min_connections ?expected_connections ?max_connections
                  checkpoint_heuristic_expected;
            }
          in
-         {cfg.shell.chain_validator_limits with synchronisation; checkpoint});
+         let bootstrapper : Bootstrapper_configuration.limits =
+           {
+             cfg.shell.chain_validator_limits.bootstrapper with
+             fetching_headers_parallel_jobs =
+               Option.value
+                 ~default:
+                   cfg.shell.chain_validator_limits.bootstrapper
+                     .fetching_headers_parallel_jobs
+                 bootstrapper_headers_parallel_jobs;
+             fetching_operations_parallel_jobs =
+               Option.value
+                 ~default:
+                   cfg.shell.chain_validator_limits.bootstrapper
+                     .fetching_operations_parallel_jobs
+                 bootstrapper_operations_parallel_jobs;
+           }
+         in
+         {
+           cfg.shell.chain_validator_limits with
+           synchronisation;
+           checkpoint;
+           bootstrapper;
+         });
       history_mode = Option.either history_mode cfg.shell.history_mode;
     }
   in

@@ -118,6 +118,8 @@ val update :
   ?synchronisation_threshold:int ->
   ?checkpoint_heuristic_threshold:int ->
   ?checkpoint_heuristic_expected:int ->
+  ?bootstrapper_headers_parallel_jobs:int ->
+  ?bootstrapper_operations_parallel_jobs:int ->
   ?history_mode:History_mode.t ->
   ?network:blockchain_network ->
   ?latency:int ->

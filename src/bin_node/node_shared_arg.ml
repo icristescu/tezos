@@ -594,7 +594,9 @@ let read_and_patch_config_file ?(may_override_network = false)
         max_connections,
         peer_table_size,
         checkpoint_heuristic_threshold,
-        checkpoint_heuristic_expected ) =
+        checkpoint_heuristic_expected,
+        bootstrapper_headers_parallel_jobs,
+        bootstrapper_operations_parallel_jobs ) =
     match connections with
     | None ->
         ( synchronisation_threshold,
@@ -602,6 +604,8 @@ let read_and_patch_config_file ?(may_override_network = false)
           None,
           None,
           peer_table_size,
+          None,
+          None,
           None,
           None )
     | Some x ->
@@ -634,13 +638,19 @@ let read_and_patch_config_file ?(may_override_network = false)
         let checkpoint_heuristic_expected =
           max 1 (min expected_connections 15)
         in
+        let headers_parallel_jobs = max 1 expected_connections in
+        (* Because validation takes longer than fetching operations,
+           no need to fetch many operations at the same time. *)
+        let operations_parallel_jobs = min 2 expected_connections in
         ( Some synchronisation_threshold,
           Some min_connections,
           Some expected_connections,
           Some max_connections,
           peer_table_size,
           Some checkpoint_heuristic_threshold,
-          Some checkpoint_heuristic_expected )
+          Some checkpoint_heuristic_expected,
+          Some headers_parallel_jobs,
+          Some operations_parallel_jobs )
   in
   Node_config_file.update
     ?data_dir
@@ -666,6 +676,8 @@ let read_and_patch_config_file ?(may_override_network = false)
     ?synchronisation_threshold
     ?checkpoint_heuristic_threshold
     ?checkpoint_heuristic_expected
+    ?bootstrapper_headers_parallel_jobs
+    ?bootstrapper_operations_parallel_jobs
     ?history_mode
     ?network
     ?latency
