@@ -124,6 +124,12 @@ module Request = struct
         Format.fprintf ppf "advertising pending operations"
 end
 
+let is_above_target = ref false
+
+let activate_events_when_above_target () = is_above_target := true
+
+let deactivate_events_when_behind_target () = is_above_target := false
+
 module Event = struct
   type t =
     | Request of
@@ -143,7 +149,7 @@ module Event = struct
     let open Request in
     match req with
     | Request (View (Flush _), _, _) ->
-        Internal_event.Notice
+        if !is_above_target then Internal_event.Notice else Internal_event.Info
     | Request (View (Notify _), _, _) ->
         Internal_event.Debug
     | Request (View Leftover, _, _) ->

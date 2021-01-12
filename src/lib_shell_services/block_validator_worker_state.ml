@@ -55,6 +55,12 @@ module Request = struct
         Format.fprintf ppf "from peer %a" P2p_peer.Id.pp_short peer
 end
 
+let is_above_target = ref false
+
+let activate_events_when_above_target () = is_above_target := true
+
+let deactivate_events_when_behind_target () = is_above_target := false
+
 module Event = struct
   type t =
     | Validation_success of Request.view * Worker_types.request_status
@@ -71,7 +77,7 @@ module Event = struct
   let level req =
     match req with
     | Validation_success _ | Validation_failure _ ->
-        Internal_event.Notice
+        if !is_above_target then Internal_event.Notice else Internal_event.Info
     | Could_not_find_context _ | Previously_validated _ | Validating_block _ ->
         Internal_event.Debug
 

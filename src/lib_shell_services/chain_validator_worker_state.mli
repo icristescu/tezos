@@ -32,6 +32,10 @@ module Request : sig
   val pp : Format.formatter -> view -> unit
 end
 
+val activate_events_when_above_target : unit -> unit
+
+val deactivate_events_when_behind_target : unit -> unit
+
 module Event : sig
   type update = Ignored_head | Branch_switch | Head_increment
 

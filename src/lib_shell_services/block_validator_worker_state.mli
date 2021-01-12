@@ -35,6 +35,10 @@ module Request : sig
   val pp : Format.formatter -> view -> unit
 end
 
+val activate_events_when_above_target : unit -> unit
+
+val deactivate_events_when_behind_target : unit -> unit
+
 module Event : sig
   type t =
     | Validation_success of Request.view * Worker_types.request_status

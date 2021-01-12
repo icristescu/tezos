@@ -172,14 +172,26 @@ let may_notify_pv pv f =
   | Worker_types.Launching _ ->
       ()
 
+let activate_events_when_above_target () =
+  Prevalidator_worker_state.activate_events_when_above_target () ;
+  Chain_validator_worker_state.activate_events_when_above_target () ;
+  Block_validator_worker_state.activate_events_when_above_target ()
+
+let deactivate_events_when_behind_target () =
+  Prevalidator_worker_state.deactivate_events_when_behind_target () ;
+  Chain_validator_worker_state.deactivate_events_when_behind_target () ;
+  Block_validator_worker_state.deactivate_events_when_behind_target ()
+
 let update_above_target nv (head : Block_header.t) (target : Block_header.t) =
   if head.shell.level >= target.shell.level && not nv.above_target then (
+    activate_events_when_above_target () ;
     nv.above_target <- true ;
     P2p_peer.Error_table.fold_resolved
       (fun _ pv () -> may_notify_pv pv Peer_validator.notify_target_reached)
       nv.active_peers
       () )
   else if head.shell.level < target.shell.level && nv.above_target then (
+    deactivate_events_when_behind_target () ;
     nv.above_target <- false ;
     P2p_peer.Error_table.fold_resolved
       (fun _ pv () -> may_notify_pv pv Peer_validator.notify_behind_target)
@@ -192,6 +204,7 @@ let update_above_target nv (head : Block_header.t) (target : Block_header.t) =
    - [peer_id] is not us.
 
    - [block] is known as valid. *)
+
 let update_synchronisation_state w
     ((block, peer_id) : Block_header.t * P2p_peer.Id.t) =
   let nv = Worker.state w in

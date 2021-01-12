@@ -32,6 +32,12 @@ module Request = struct
   let pp = Block_hash.pp
 end
 
+let is_above_target = ref false
+
+let activate_events_when_above_target () = is_above_target := true
+
+let deactivate_events_when_behind_target () = is_above_target := false
+
 module Event = struct
   type update = Ignored_head | Branch_switch | Head_increment
 
@@ -68,7 +74,8 @@ module Event = struct
       | Ignored_head ->
           Internal_event.Info
       | Branch_switch | Head_increment ->
-          Internal_event.Notice )
+          if !is_above_target then Internal_event.Notice
+          else Internal_event.Info )
     | Could_not_switch_testchain _ ->
         Internal_event.Error
     | Bootstrapped ->
