@@ -1188,6 +1188,82 @@ module Event = struct
       ~msg:"failed to resolve {type} address: '{addr}'"
       ("type", Data_encoding.string)
       ("addr", Data_encoding.string)
+
+  let expected_connections_headers_parallel_jobs =
+    Internal_event.Simple.declare_2
+      ~section
+      ~level
+      ~name:"expected_connections_headers_parallel_jobs"
+      ~msg:
+        "The bootstrapper is configured with more headers_parallel_jobs \
+         ({headers_parallel_jobs}) than the number of expected connexions \
+         ({expected_connections})."
+      ("headers_parallel_jobs", Data_encoding.uint16)
+      ("expected_connections", Data_encoding.uint16)
+
+  let expected_connections_operations_parallel_jobs =
+    Internal_event.Simple.declare_2
+      ~section
+      ~level
+      ~name:"expected_connections_operations_parallel_jobs"
+      ~msg:
+        "The bootstrapper is configured with more operations_parallel_jobs \
+         ({operations_parallel_jobs}) than the number of expected connexions \
+         ({expected_connections})."
+      ("operations_parallel_jobs", Data_encoding.uint8)
+      ("expected_connections", Data_encoding.uint16)
+
+  let headers_parallel_jobs_negative =
+    Internal_event.Simple.declare_1
+      ~section
+      ~level
+      ~name:"headers_parallel_jobs_negative"
+      ~msg:
+        "The bootstrapper is configured with a negative value for \
+         headers_parallel_jobs ({headers_parallel_jobs})."
+      ("headers_parallel_jobs", Data_encoding.uint16)
+
+  let operations_parallel_jobs_negative =
+    Internal_event.Simple.declare_1
+      ~section
+      ~level
+      ~name:"operations_parallel_jobs_non_negative"
+      ~msg:
+        "The bootstrapper is configured with a negative value for \
+         operations_parallel_jobs ({operations_parallel_jobs})."
+      ("operations_parallel_jobs", Data_encoding.uint8)
+
+  let range_size_negative =
+    Internal_event.Simple.declare_1
+      ~section
+      ~level
+      ~name:"range_size_non_negative"
+      ~msg:
+        "The bootstrapper is configured with a negative value for range_size \
+         ({range_size})."
+      ("range_size", Data_encoding.uint16)
+
+  let expected_connections_checkpoint_heuristic =
+    Internal_event.Simple.declare_2
+      ~section
+      ~level
+      ~name:"expected_connections_checkpoint_expected"
+      ~msg:
+        "The checkpoint heuristic is configured with an expected value \
+         ({expected}) greater than the number of expected connexions."
+      ("expected", Data_encoding.uint16)
+      ("expected_connections", Data_encoding.uint16)
+
+  let expected_threshold_checkpoint_heuristic =
+    Internal_event.Simple.declare_2
+      ~section
+      ~level
+      ~name:"expected_threshold_checkpoint_heuristic"
+      ~msg:
+        "The checkpoint heuristic is configured with an expected value \
+         ({expected}) lower the the threshold value ({threshold})."
+      ("expected", Data_encoding.uint16)
+      ("threshold", Data_encoding.uint16)
 end
 
 let string_of_json_encoding_error exn =
@@ -1519,6 +1595,46 @@ let check_connections config =
           target_known_points
           max_known_points
 
+let check_bootstrapper_config config =
+  let open Chain_validator in
+  let headers_parallel_jobs =
+    config.shell.chain_validator_limits.bootstrapper
+      .fetching_headers_parallel_jobs
+  in
+  let operations_parallel_jobs =
+    config.shell.chain_validator_limits.bootstrapper
+      .fetching_operations_parallel_jobs
+  in
+  let range_size =
+    config.shell.chain_validator_limits.bootstrapper.range_size
+  in
+  let expected_connections = config.p2p.limits.expected_connections in
+  if headers_parallel_jobs > expected_connections then
+    Event.(emit expected_connections_headers_parallel_jobs)
+      (headers_parallel_jobs, expected_connections)
+  else if operations_parallel_jobs > config.p2p.limits.expected_connections
+  then
+    Event.(emit expected_connections_operations_parallel_jobs)
+      (operations_parallel_jobs, expected_connections)
+  else if headers_parallel_jobs <= 0 then
+    Event.(emit headers_parallel_jobs_negative) headers_parallel_jobs
+  else if operations_parallel_jobs <= 0 then
+    Event.(emit operations_parallel_jobs_negative) operations_parallel_jobs
+  else if range_size <= 0 then Event.(emit range_size_negative) range_size
+  else Lwt.return_unit
+
+let check_checkpoint_config config =
+  let open Chain_validator in
+  let threshold = config.shell.chain_validator_limits.checkpoint.threshold in
+  let expected = config.shell.chain_validator_limits.checkpoint.expected in
+  let expected_connections = config.p2p.limits.expected_connections in
+  if expected > expected_connections then
+    Event.(emit expected_connections_checkpoint_heuristic)
+      (expected, expected_connections)
+  else if threshold > expected then
+    Event.(emit expected_threshold_checkpoint_heuristic) (threshold, expected)
+  else Lwt.return_unit
+
 let check config =
   check_listening_addrs config
   >>=? fun () ->
@@ -1526,4 +1642,8 @@ let check config =
   >>=? fun () ->
   check_discovery_addr config
   >>=? fun () ->
-  check_bootstrap_peers config >>=? fun () -> return (check_connections config)
+  check_bootstrap_peers config
+  >>=? fun () ->
+  check_connections config ;
+  check_bootstrapper_config config
+  >>= fun () -> check_checkpoint_config config >>= return
