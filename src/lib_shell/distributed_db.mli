@@ -2,7 +2,7 @@
 (*                                                                           *)
 (* Open Source License                                                       *)
 (* Copyright (c) 2018 Dynamic Ledger Solutions, Inc. <contact@tezos.com>     *)
-(* Copyright (c) 2019 Nomadic Labs, <contact@nomadic-labs.com>               *)
+(* Copyright (c) 2020 Nomadic Labs. <contact@nomadic-labs.com>               *)
 (* Copyright (c) 2020 Metastate AG <hello@metastate.dev>                     *)
 (*                                                                           *)
 (* Permission is hereby granted, free of charge, to any person obtaining a   *)
@@ -117,6 +117,18 @@ module Request : sig
       [chain_id] is the identifier for [chain_db]. Expected answer is a
       [Get_current_head] message *)
   val current_head : chain_db -> ?peer:P2p_peer.Id.t -> unit -> unit
+
+  (** [checkpoint ?timeout chain_db ~peer f] sends a [Get_checkpoint
+     chain_id] message to [peer]. [chain_id] is the identifier for
+     [chain_db]. Expected answer is a a [Checkpoint chain_id
+     checkpoint] message. On reception the function [f] is called with
+     the [checkpoint] received. *)
+  val checkpoint :
+    ?timeout:Ptime.Span.t ->
+    chain_db ->
+    peer:P2p_peer.Id.t ->
+    (Block_header.t option -> 'a Lwt.t) ->
+    'a Lwt.t
 end
 
 module Advertise : sig

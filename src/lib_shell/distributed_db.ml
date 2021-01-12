@@ -2,7 +2,7 @@
 (*                                                                           *)
 (* Open Source License                                                       *)
 (* Copyright (c) 2018 Dynamic Ledger Solutions, Inc. <contact@tezos.com>     *)
-(* Copyright (c) 2019 Nomadic Labs, <contact@nomadic-labs.com>               *)
+(* Copyright (c) 2020 Nomadic Labs. <contact@nomadic-labs.com>               *)
 (* Copyright (c) 2020 Metastate AG <hello@metastate.dev>                     *)
 (*                                                                           *)
 (* Permission is hereby granted, free of charge, to any person obtaining a   *)
@@ -477,6 +477,36 @@ module Request = struct
     | None ->
         () ) ;
     send chain_db ?peer @@ Get_current_branch chain_id
+
+  let checkpoint ?timeout chain_db ~peer f =
+    let chain_id = State.Chain.id chain_db.reader_chain_db.chain_state in
+    let meta = P2p.get_peer_metadata chain_db.global_db.p2p peer in
+    let (t, u) = Lwt.task () in
+    match P2p_peer.Table.find chain_db.global_db.p2p_readers peer with
+    | None ->
+        f None
+    | Some p2p_reader ->
+        let handle =
+          P2p_reader.on_checkpoint p2p_reader chain_id (fun hash ->
+              Lwt.wakeup_later u hash)
+        in
+        Peer_metadata.incr meta (Sent_request Checkpoint) ;
+        send chain_db ~peer @@ Get_checkpoint chain_id ;
+        let task =
+          match timeout with
+          | Some timeout ->
+              Lwt.pick
+                [ (Systime_os.sleep timeout >>= fun () -> Lwt.return_none);
+                  t >>= Lwt.return_some ]
+          | None ->
+              t >>= Lwt.return_some
+        in
+        (* We protect the task to ensure that
+           `P2p_reader.clear_checkpoint` is called. *)
+        Lwt.protected task
+        >>= fun header_opt ->
+        P2p_reader.clear_checkpoint_handler p2p_reader handle ;
+        f header_opt
 end
 
 module Advertise = struct
