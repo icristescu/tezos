@@ -92,10 +92,270 @@ let with_atomic_open_out configuration filename f =
   >>=? fun res ->
   Lwt_unix.rename temp_file filename >>= fun () -> Lwt.return (Ok res)
 
-(* FIXME: This type will be implemented in a next commit *)
-type info = unit
+module Level_range = Ranger.Int32
 
-type state = Active of info | Inactive of info option
+module Introspection = struct
+  module Level_range = Level_range
+
+  type step =
+    | Fetching_headers
+    | Write_headers
+    | Waiting_for_fetching_operations
+    | Fetching_operations
+    | Waiting_for_validation
+    | Validating
+    | Processed
+
+  type range_info = {
+    mutable current_step : step;
+    mutable beginning : Time.System.t;
+    mutable fetching_headers_time : Ptime.Span.t;
+    mutable write_headers_time : Ptime.Span.t;
+    mutable waiting_for_fetching_operations_time : Ptime.Span.t;
+    mutable fetching_operations_time : Ptime.Span.t;
+    mutable waiting_for_validation_time : Ptime.Span.t;
+    mutable validating_time : Ptime.Span.t;
+    mutable retries : int;
+  }
+
+  module Table = Hashtbl.Make (struct
+    type t = Level_range.t
+
+    let equal = ( = )
+
+    let hash = Hashtbl.hash
+  end)
+
+  module Set = Set.Make (struct
+    type t = Level_range.t
+
+    let compare = compare
+  end)
+
+  type info = {
+    started : Time.System.t;
+    mutable status : (Time.System.t * unit tzresult) Lwt.state;
+    mutable ranges_processed : Set.t;
+    range_info : range_info Table.t;
+    target : Block_header.t;
+    mutable validated_blocks : Int32.t;
+    mutable blocks_to_validate : Int32.t;
+  }
+
+  let empty_info target =
+    let started = Systime_os.now () in
+    {
+      started;
+      status = Lwt.Sleep;
+      ranges_processed = Set.empty;
+      range_info = Table.create 101;
+      target;
+      validated_blocks = 0l;
+      blocks_to_validate = -1l;
+    }
+
+  let update_block_validated info =
+    info.validated_blocks <- Int32.add info.validated_blocks 1l ;
+    return_unit
+
+  let update_info info range step =
+    let now = Systime_os.now () in
+    match Table.find info.range_info range with
+    | None ->
+        info.ranges_processed <- Set.add range info.ranges_processed ;
+        let range_info =
+          {
+            current_step = step;
+            beginning = now;
+            fetching_headers_time = Ptime.Span.zero;
+            write_headers_time = Ptime.Span.zero;
+            waiting_for_fetching_operations_time = Ptime.Span.zero;
+            fetching_operations_time = Ptime.Span.zero;
+            waiting_for_validation_time = Ptime.Span.zero;
+            validating_time = Ptime.Span.zero;
+            retries = 0;
+          }
+        in
+        Table.add info.range_info range range_info
+    | Some range_info -> (
+        let since_beginning = Ptime.diff now range_info.beginning in
+        let sum_spans =
+          List.fold_left
+            (fun spans span -> Ptime.Span.add spans span)
+            Ptime.Span.zero
+        in
+        match step with
+        | Fetching_headers ->
+            ()
+        | Write_headers ->
+            range_info.current_step <- Write_headers ;
+            range_info.fetching_headers_time <- since_beginning
+        | Waiting_for_fetching_operations ->
+            range_info.current_step <- Waiting_for_fetching_operations ;
+            range_info.write_headers_time <-
+              Ptime.Span.sub since_beginning range_info.fetching_headers_time
+        | Fetching_operations ->
+            range_info.current_step <- Fetching_operations ;
+            range_info.waiting_for_fetching_operations_time <-
+              (let previous_spans =
+                 sum_spans
+                   [ range_info.fetching_headers_time;
+                     range_info.write_headers_time ]
+               in
+               Ptime.Span.sub since_beginning previous_spans)
+        | Waiting_for_validation ->
+            range_info.current_step <- Waiting_for_validation ;
+            range_info.fetching_operations_time <-
+              (let previous_spans =
+                 sum_spans
+                   [ range_info.fetching_headers_time;
+                     range_info.write_headers_time;
+                     range_info.waiting_for_fetching_operations_time ]
+               in
+               Ptime.Span.sub since_beginning previous_spans)
+        | Validating ->
+            range_info.current_step <- Validating ;
+            range_info.waiting_for_validation_time <-
+              (let previous_spans =
+                 sum_spans
+                   [ range_info.fetching_headers_time;
+                     range_info.write_headers_time;
+                     range_info.waiting_for_fetching_operations_time;
+                     range_info.fetching_operations_time ]
+               in
+               Ptime.Span.sub since_beginning previous_spans)
+        | Processed ->
+            range_info.current_step <- Processed ;
+            range_info.validating_time <-
+              (let previous_spans =
+                 sum_spans
+                   [ range_info.fetching_headers_time;
+                     range_info.write_headers_time;
+                     range_info.waiting_for_fetching_operations_time;
+                     range_info.fetching_operations_time;
+                     range_info.waiting_for_validation_time ]
+               in
+               Ptime.Span.sub since_beginning previous_spans) )
+
+  let update_info_retry info range =
+    match Table.find info.range_info range with
+    | None ->
+        () (* Not supposed to happen *)
+    | Some infos ->
+        infos.retries <- infos.retries + 1
+
+  let pp_step fmt = function
+    | Fetching_headers ->
+        Format.fprintf fmt "fetching headers"
+    | Write_headers ->
+        Format.fprintf fmt "write headers"
+    | Waiting_for_fetching_operations ->
+        Format.fprintf fmt "waiting for fetching operations"
+    | Fetching_operations ->
+        Format.fprintf fmt "fetching operations"
+    | Waiting_for_validation ->
+        Format.fprintf fmt "waiting for validation"
+    | Validating ->
+        Format.fprintf fmt "validating"
+    | Processed ->
+        Format.fprintf fmt "Processed"
+
+  let pp_status fmt = function
+    | Lwt.Return (over, Ok ()) ->
+        Format.fprintf
+          fmt
+          "Successfully finished at %a@."
+          Time.System.pp_hum
+          over
+    | Lwt.Return (over, Error _) ->
+        Format.fprintf fmt "Failed at %a@." Time.System.pp_hum over
+    | Lwt.Fail exn ->
+        Format.fprintf fmt "Promise failed with %s@." (Printexc.to_string exn)
+    | Lwt.Sleep ->
+        Format.fprintf fmt "Ongoing@."
+
+  let pp_range_info fmt
+      { current_step;
+        beginning;
+        fetching_headers_time;
+        write_headers_time;
+        waiting_for_fetching_operations_time;
+        fetching_operations_time;
+        waiting_for_validation_time;
+        validating_time;
+        retries } =
+    Format.fprintf fmt "Started: %a@." Time.System.pp_hum beginning ;
+    Format.fprintf fmt "Current step: %a@." pp_step current_step ;
+    Format.fprintf fmt "Retries: %d@." retries ;
+    List.iter
+      (fun (name, span) ->
+        if Ptime.Span.(span <> zero) then
+          Format.fprintf fmt "%s: %a@." name Ptime.Span.pp span)
+      [ ("fetching headers", fetching_headers_time);
+        ("write headers", write_headers_time);
+        ( "waiting for fetching operations",
+          waiting_for_fetching_operations_time );
+        ("fetching operations", fetching_operations_time);
+        ("waiting for validation", waiting_for_validation_time);
+        ("validating", validating_time) ]
+
+  let pp fmt
+      { started;
+        status;
+        ranges_processed;
+        range_info;
+        target;
+        validated_blocks;
+        blocks_to_validate } =
+    Format.fprintf fmt "BOOTSTRAPPER INFO:@." ;
+    Format.fprintf
+      fmt
+      "Target hash     : %a@."
+      Block_hash.pp
+      (Block_header.hash target) ;
+    Format.fprintf
+      fmt
+      "Target level    : %ld@."
+      target.Block_header.shell.level ;
+    Format.fprintf fmt "Starting time    : %a@." Time.System.pp_hum started ;
+    Format.fprintf fmt "Status           : %a@." pp_status status ;
+    Format.fprintf
+      fmt
+      "Range processed  : %d@."
+      (Set.cardinal ranges_processed) ;
+    Format.fprintf fmt "Validated blocks : %ld@." validated_blocks ;
+    Format.fprintf fmt "blocks to validate : %ld@." blocks_to_validate ;
+    Format.fprintf
+      fmt
+      "Range processed  : %d@."
+      (Set.cardinal ranges_processed) ;
+    Format.fprintf fmt "Range statistics:@." ;
+    let ranges_list : (Level_range.t * range_info) list ref = ref [] in
+    Table.iter
+      (fun range range_info ->
+        ranges_list := (range, range_info) :: !ranges_list)
+      range_info ;
+    let sorted_ranges =
+      List.fast_sort
+        (fun (_, {beginning; _}) (_, {beginning = beginning'; _}) ->
+          Ptime.compare beginning beginning')
+        !ranges_list
+    in
+    List.iter
+      (fun (range, range_info) ->
+        Format.fprintf
+          fmt
+          "Range %a:@.%a@."
+          Level_range.pp
+          range
+          pp_range_info
+          range_info)
+      sorted_ranges
+end
+
+type state =
+  | Active of Introspection.info
+  | Inactive of Introspection.info option
 
 type t = {
   mutable job : unit tzresult Lwt.t option;
@@ -105,7 +365,6 @@ type t = {
   configuration : configuration;
 }
 
-module Level_range = Ranger.Int32
 module Range_worker = Ranger.Make (Level_range)
 
 let range_filename configuration range =
@@ -125,6 +384,7 @@ module Headers : sig
      list of parallel errors. *)
   val parameters :
     configuration ->
+    Introspection.info ->
     target:Block_header.t ->
     Level_range.t ->
     error trace Range_worker.parameters
@@ -152,10 +412,12 @@ end = struct
 
   let fail range s = Error_monad.fail (Fetching_headers_error (range, s))
 
-  let parallel_task configuration target (range : Level_range.t) =
+  let parallel_task configuration info target (range : Level_range.t) =
+    Introspection.update_info info range Fetching_headers ;
     configuration.getters.get_headers ~target ~from:range.from ~upto:range.upto
     >>= function
     | None ->
+        Introspection.update_info_retry info range ;
         return_none
     | Some (_, []) ->
         fail
@@ -217,8 +479,9 @@ end = struct
     | Ok (Ok ()) ->
         Lwt.return (Ok ())
 
-  let sequential_task configuration range trigger
+  let sequential_task configuration info range trigger
       (consistency_checker, first_header, headers) =
+    Introspection.update_info info range Write_headers ;
     consistency_checker trigger
     >>= fun consistent ->
     (* It is important not to fail here because we may receive
@@ -230,6 +493,7 @@ end = struct
       write_range configuration range (first_header :: headers)
       >>= function
       | Ok () ->
+          Introspection.update_info info range Waiting_for_fetching_operations ;
           return_some first_header.shell.predecessor
       | Error err ->
           fail
@@ -239,15 +503,15 @@ end = struct
                pp_write_range_error
                err)
 
-  let parameters configuration ~target range =
+  let parameters configuration info ~target range =
     let tasks_in_parallel = configuration.parallel_ranges_header_fetched in
     let starts_with = Lwt.return (Block_header.hash target) in
     let max_range_size = configuration.range_size in
     (* The range will be split in smaller ranges. These ranges will be
        processed from top to bottom. *)
     let reverse = true in
-    let parallel_task = parallel_task configuration target in
-    let sequential_task = sequential_task configuration in
+    let parallel_task = parallel_task configuration info target in
+    let sequential_task = sequential_task configuration info in
     let recovery_task _ = configuration.getters.when_unable_to_fetch () in
     (* FIXME: Implement recovery mode in a further commit *)
     let filter _ = Lwt.return_none in
@@ -272,6 +536,7 @@ module Operations_and_validation : sig
      list of parallel errors. *)
   val parameters :
     configuration ->
+    Introspection.info ->
     when_to_start:unit Lwt.t ->
     Level_range.t ->
     error trace Range_worker.parameters
@@ -320,7 +585,9 @@ end = struct
   let fail range header s =
     Error_monad.fail (Fetching_operations_validation_error (range, header, s))
 
-  let parallel_task configuration range : block list option tzresult Lwt.t =
+  let parallel_task configuration info range : block list option tzresult Lwt.t
+      =
+    Introspection.update_info info range Fetching_operations ;
     let range_filename = range_filename configuration range in
     with_open_in range_filename (fun fd ->
         let size = (Unix.fstat (Lwt_unix.unix_file_descr fd)).Unix.st_size in
@@ -334,7 +601,13 @@ end = struct
     >>= function
     | Ok (Ok headers) -> (
         configuration.getters.get_operations headers
-        >>= function None -> return_none | Some blocks -> return_some blocks )
+        >>= function
+        | None ->
+            Introspection.update_info_retry info range ;
+            return_none
+        | Some blocks ->
+            Introspection.update_info info range Waiting_for_validation ;
+            return_some blocks )
     | Ok (Error error) ->
         fail
           range
@@ -353,25 +626,29 @@ end = struct
              f
              string)
 
-  let sequential_task configuration range () blocks =
+  let sequential_task configuration info range () blocks =
+    Introspection.update_info info range Validating ;
     List.iter_es
       (fun block ->
         trace
           range
           (Some (fst block))
           "Validation failed"
-          (configuration.getters.validate block))
+          (configuration.getters.validate block)
+        >>=? fun () -> Introspection.update_block_validated info)
       blocks
-    >>=? fun () -> return_some ()
+    >>=? fun () ->
+    Introspection.update_info info range Processed ;
+    return_some ()
 
-  let parameters configuration ~when_to_start range =
+  let parameters configuration info ~when_to_start range =
     let tasks_in_parallel = configuration.parallel_ranges_operations_fetched in
     let starts_with = when_to_start in
     let max_range_size = configuration.range_size in
     (* ranges are processed bottom to top *)
     let reverse = false in
-    let parallel_task = parallel_task configuration in
-    let sequential_task = sequential_task configuration in
+    let parallel_task = parallel_task configuration info in
+    let sequential_task = sequential_task configuration info in
     let recovery_task _ = configuration.getters.when_unable_to_fetch () in
     let filter _ = Lwt.return_none in
     Range_worker.E
@@ -413,11 +690,11 @@ let () =
     (function Bootstrapper_error -> Some () | _ -> None)
     (fun () -> Bootstrapper_error)
 
-let main_worker configuration target range =
+let main_worker configuration info target range =
   if Level_range.length range <= 0 then return_unit
   else
     let fetch_headers_parameters =
-      Headers.parameters configuration ~target range
+      Headers.parameters configuration info ~target range
     in
     let headers_worker = Range_worker.create fetch_headers_parameters in
     Range_worker.wait headers_worker
@@ -509,23 +786,34 @@ let create configuration =
           next_target = None;
         }
 
-let main_job t target =
+let main_job t target (info : Introspection.info) =
   prepare_worker t.configuration ~target
-  >>=? fun (target, range) -> main_worker t.configuration target range
+  >>=? fun (target, range) ->
+  info.blocks_to_validate <- Int32.sub range.upto range.from ;
+  main_worker t.configuration info target range
 
 let notify_target t ~target =
   match t.job with
   | None ->
       let rec job target =
-        t.state <- Active () ;
-        let p = main_job t target in
-        Lwt.on_termination p (fun _ -> t.state <- Inactive (Some ())) ;
+        let info = Introspection.empty_info target in
+        t.state <- Active info ;
+        let p = main_job t target info in
+        Lwt.on_any
+          p
+          (fun res ->
+            let now = Systime_os.now () in
+            info.status <- Lwt.Return (now, res) ;
+            t.state <- Inactive (Some info))
+          (fun exn ->
+            info.status <- Lwt.Fail exn ;
+            t.state <- Inactive (Some info)) ;
         p
         >>=? fun () ->
         match t.next_target with
         | None ->
             t.job <- None ;
-            t.state <- Inactive (Some ()) ;
+            t.state <- Inactive (Some info) ;
             return_unit
         | Some target ->
             t.next_target <- None ;
