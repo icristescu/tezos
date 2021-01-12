@@ -25,6 +25,107 @@
 
 open Bootstrapper_services
 
+module Events = struct
+  include Internal_event.Simple
+
+  let section = ["node"; "bootstrapper"]
+
+  let initialized =
+    declare_0
+      ~section
+      ~name:"bootstrapper_initialized"
+      ~msg:"bootstrapper initialized"
+      ~level:Notice
+      ()
+
+  let shutdown =
+    declare_0
+      ~section
+      ~name:"bootstrapper_shutdown"
+      ~msg:"bootstrapper shutdown"
+      ~level:Notice
+      ()
+
+  let start_bootstrapping =
+    declare_2
+      ~section
+      ~name:"bootstrapper_start_bootstrapping"
+      ~msg:"start bootstrapping up to {hash} at level {level}"
+      ~level:Notice
+      ("hash", Block_hash.encoding)
+      ("level", Data_encoding.int32)
+
+  let fetching_headers =
+    declare_1
+      ~section
+      ~name:"bootstrapper_start_fetching_headers"
+      ~msg:"start to fetch {int} blocks"
+      ~level:Notice
+      ("int", Data_encoding.int31)
+
+  let fetching_failed =
+    declare_2
+      ~section
+      ~name:"bootstrapper_fetching_failed"
+      ~msg:"fetching of {resources} for range {range} failed"
+      ~level:Info
+      ~pp2:Level_range.pp
+      ("resources", Data_encoding.string)
+      ("range", Level_range.encoding)
+
+  let fetched_and_stored_range_headers_ok =
+    declare_1
+      ~section
+      ~name:"bootstrapper_fetching_headers_ok"
+      ~msg:"fetched and stored blocks for range {range}"
+      ~level:Notice
+      ~pp1:Level_range.pp
+      ("range", Level_range.encoding)
+
+  let fetched_operations_ok =
+    declare_1
+      ~section
+      ~name:"bootstrapper_fetching_operations_ok"
+      ~msg:"fetched operations for range {range}"
+      ~level:Notice
+      ~pp1:Level_range.pp
+      ("range", Level_range.encoding)
+
+  let headers_fetched =
+    declare_0
+      ~section
+      ~name:"bootstrapper_start_headers_fetched"
+      ~msg:"all headers have been fetched or was fetched previously"
+      ~level:Notice
+      ()
+
+  let validated_block =
+    declare_2
+      ~section
+      ~name:"bootstrapper_validated_block"
+      ~msg:"validated block {level}: {hash}"
+      ~level:Notice
+      ("hash", Block_hash.encoding)
+      ("level", Data_encoding.int32)
+
+  let terminated_successfuly =
+    declare_0
+      ~section
+      ~name:"bootstrapper_terminated_successfuly"
+      ~msg:"the bootstrapper terminated successfuly"
+      ~level:Notice
+      ()
+
+  let terminated_with_trace =
+    declare_1
+      ~section
+      ~name:"bootstrapper_terminated_with_trace"
+      ~msg:"the bootstrapper terminated with trace: {trace}"
+      ~level:Warning
+      ~pp1:Error_monad.pp_print_error
+      ("trace", Error_monad.trace_encoding)
+end
+
 type block = Block_header.t * Operation.t list list
 
 type consistency_checker = Block_hash.t -> bool Lwt.t
@@ -109,9 +210,9 @@ module Introspection = struct
       blocks_to_validate = -1l;
     }
 
-  let update_block_validated info =
+  let update_block_validated info (head, _) =
     info.validated_blocks <- Int32.add info.validated_blocks 1l ;
-    return_unit
+    Events.(emit validated_block) (Block_header.hash head, head.shell.level)
 
   let update_info info range step =
     let now = Systime_os.now () in
@@ -261,7 +362,8 @@ end = struct
     >>= function
     | None ->
         Introspection.update_info_retry info range ;
-        return_none
+        Events.(emit fetching_failed) ("blocks", range)
+        >>= fun () -> return_none
     | Some (_, []) ->
         fail
           range
@@ -337,7 +439,8 @@ end = struct
       >>= function
       | Ok () ->
           Introspection.update_info info range Waiting_for_fetching_operations ;
-          return_some first_header.shell.predecessor
+          Events.(emit fetched_and_stored_range_headers_ok) range
+          >>= fun () -> return_some first_header.shell.predecessor
       | Error err ->
           fail
             range
@@ -447,10 +550,12 @@ end = struct
         >>= function
         | None ->
             Introspection.update_info_retry info range ;
-            return_none
+            Events.(emit fetching_failed) ("operations", range)
+            >>= fun () -> return_none
         | Some blocks ->
             Introspection.update_info info range Waiting_for_validation ;
-            return_some blocks )
+            Events.(emit fetched_operations_ok) range
+            >>= fun () -> return_some blocks )
     | Ok (Error error) ->
         fail
           range
@@ -478,7 +583,8 @@ end = struct
           (Some (fst block))
           "Validation failed"
           (configuration.getters.validate block)
-        >>=? fun () -> Introspection.update_block_validated info)
+        >>=? fun () ->
+        Introspection.update_block_validated info block >>= return)
       blocks
     >>=? fun () ->
     Introspection.update_info info range Processed ;
@@ -536,15 +642,23 @@ let () =
 let main_worker configuration info target range =
   if Level_range.length range <= 0 then return_unit
   else
+    Events.(emit start_bootstrapping)
+      (Block_header.hash target, target.shell.level)
+    >>= fun () ->
     let fetch_headers_parameters =
       Headers.parameters configuration info ~target range
     in
+    Events.(emit fetching_headers) (Level_range.length range)
+    >>= fun () ->
     let headers_worker = Range_worker.create fetch_headers_parameters in
     Range_worker.wait headers_worker
     >>=? fun () ->
+    Events.(emit headers_fetched) ()
+    >>= fun () ->
     let operations_and_validation_parameters =
       Operations_and_validation.parameters
         configuration
+        info
         ~when_to_start:Lwt.return_unit
         range
     in
@@ -615,6 +729,8 @@ let check_configuration configuration =
     >>=? fun () -> check_path_is_dir_or_make_it configuration.temporary_path
 
 let create configuration =
+  Events.(emit initialized) ()
+  >>= fun () ->
   check_configuration configuration
   >>= function
   | Error err ->
@@ -631,9 +747,16 @@ let create configuration =
 
 let main_job t target (info : Introspection.info) =
   prepare_worker t.configuration ~target
-  >>=? fun (target, range) ->
-  info.blocks_to_validate <- Int32.sub range.upto range.from ;
-  main_worker t.configuration info target range
+  >>=? (fun (target, range) ->
+         info.blocks_to_validate <- Int32.sub range.upto range.from ;
+         main_worker t.configuration info target range)
+  >>= fun res ->
+  ( match res with
+  | Ok () ->
+      Events.(emit terminated_successfuly) ()
+  | Error trace ->
+      Events.(emit terminated_with_trace) trace )
+  >>= fun () -> Lwt.return res
 
 let notify_target t ~target =
   match t.job with
@@ -649,6 +772,7 @@ let notify_target t ~target =
             info.status <- Lwt.Return (now, res) ;
             t.state <- Inactive (Some info))
           (fun exn ->
+            Format.eprintf "Uncaught exception: %s@." (Printexc.to_string exn) ;
             info.status <- Lwt.Fail exn ;
             t.state <- Inactive (Some info)) ;
         p
@@ -672,3 +796,7 @@ let wait t =
   match t.job with None -> return_unit | Some job -> Lwt.protected job
 
 let cancel t = match t.job with None -> () | Some job -> Lwt.cancel job
+
+let shutdown t =
+  cancel t ;
+  Events.(emit shutdown) ()

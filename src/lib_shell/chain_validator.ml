@@ -608,7 +608,8 @@ let on_close w =
       []
   in
   Consensus_heuristic.Worker.cancel nv.checkpoint_consensus ;
-  Bootstrapper.cancel nv.bootstrapper.bootstrapper ;
+  Bootstrapper.shutdown nv.bootstrapper.bootstrapper
+  >>= fun () ->
   Lwt.join
     ( Option.iter_s Prevalidator.shutdown nv.prevalidator
     :: Option.iter_s (fun (_, shutdown) -> shutdown ()) nv.child

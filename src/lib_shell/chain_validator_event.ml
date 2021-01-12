@@ -70,3 +70,47 @@ let loading_protocol =
     ~msg:"loading non-embedded protocol {protocol} from disk"
     ~pp1:Protocol_hash.pp
     ("protocol", Protocol_hash.encoding)
+
+module Bootstrapper = struct
+  let section = ["node"; "chain_validator"; "bootstrapper"]
+
+  let unable_to_fetch =
+    declare_1
+      ~section
+      ~name:"bootstrapper_unable_to_fetch"
+      ~level:Info
+      ~msg:"Unable to fetch some ressources. Try again in {delay} seconds"
+      ("delay", Time.System.Span.encoding)
+
+  let not_enough_peers =
+    declare_1
+      ~section
+      ~name:"bootstrapper_not_enough_peers"
+      ~level:Warning
+      ~msg:
+        "Could not fetch the next range of {ressource}. Not enough peer. \
+         Maybe a configuration issue?"
+      ("ressource", Data_encoding.string)
+
+  let fetching_header_timeout =
+    declare_2
+      ~section
+      ~name:"bootstrapper_fetching_header_timeout"
+      ~level:Warning
+      ~msg:
+        "Unable to fetch header of block level {level} with {peer}, the delay \
+         has expired."
+      ("level", Data_encoding.int32)
+      ("peer", P2p_peer.Id.encoding)
+
+  let fetching_operations_timeout =
+    declare_2
+      ~section
+      ~name:"bootstrapper_fetching_operations_timeout"
+      ~level:Warning
+      ~msg:
+        "Unable to fetch operations of block level {level} with {peer}, the \
+         delay has expired."
+      ("level", Data_encoding.int32)
+      ("peer", P2p_peer.Id.encoding)
+end

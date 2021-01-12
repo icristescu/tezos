@@ -130,7 +130,7 @@ type configuration = {
   parallel_ranges_header_fetched : int;
       (** How many ranges are fetched at the same time. *)
   parallel_ranges_operations_fetched : int;
-      (** How many ranges are fetched at the same time. *)
+      (** How many ranges are fetched at the same time *)
   getters : getters;
       (** Functions used by the bootstrapper to communicate with the external world. *)
 }
@@ -154,6 +154,10 @@ val wait : t -> unit tzresult Lwt.t
 (** [cancel bootstrapper] cancels the current task of the
      bootstrapper. Is a noop if the bootstrapper was inactive. *)
 val cancel : t -> unit
+
+(** [shutdown bootstrapper] cancels the current task of the
+     bootstrapper and log a shutdown event. *)
+val shutdown : t -> unit Lwt.t
 
 (** [state bootstrapper] returns the current state of the
    bootstrapper. *)
