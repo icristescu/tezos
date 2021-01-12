@@ -538,6 +538,98 @@ module Request = struct
         Lwt.return header_opt
 end
 
+module Request_worker = struct
+  module Set_maker =
+  (val Ringo.(set_maker ~replacement:FIFO ~overflow:Strong ~accounting:Sloppy))
+
+  module Bounded_peers_ring = Set_maker (P2p_peer.Id)
+
+  type timeout_peers = Bounded_peers_ring.t
+
+  type 'a t = {
+    chain_db : chain_db;
+    mutable peers_with_task : P2p_peer.Id.Set.t;
+    on_failure : P2p_peer.Id.t -> 'a -> unit Lwt.t;
+    mutable timeout_peers : timeout_peers;
+  }
+
+  type 'a handler = {task : 'a list option Lwt.t; punish : unit -> unit Lwt.t}
+
+  let wait handler = handler.task
+
+  let punish handler = handler.punish ()
+
+  let add_peer_timed_out t peer = Bounded_peers_ring.add t.timeout_peers peer
+
+  let find_next_peer t =
+    let active_peers = !(t.chain_db.reader_chain_db.active_peers) in
+    P2p_peer.Id.Set.choose
+      (P2p_peer.Id.Set.filter
+         (fun peer -> not (Bounded_peers_ring.mem t.timeout_peers peer))
+         (P2p_peer.Id.Set.diff active_peers t.peers_with_task))
+
+  let punish_peer t peer =
+    disconnect t.chain_db peer
+    >>= fun () -> Lwt.return (P2p.greylist_peer t.chain_db.global_db.p2p peer)
+
+  let task_with_peer t peer f =
+    t.peers_with_task <- P2p_peer.Id.Set.add peer t.peers_with_task ;
+    let p = f peer in
+    Lwt.on_termination p (fun () ->
+        t.peers_with_task <- P2p_peer.Id.Set.remove peer t.peers_with_task) ;
+    p
+
+  let worker (type a) t task (inputs : a list) =
+    let peer =
+      match find_next_peer t with
+      | None ->
+          Bounded_peers_ring.clear t.timeout_peers ;
+          find_next_peer t
+      | Some peer ->
+          let active_peers = !(t.chain_db.reader_chain_db.active_peers) in
+          if P2p_peer.Id.Set.mem peer active_peers then Some peer else None
+    in
+    match peer with
+    | None ->
+        None
+    | Some peer ->
+        let task () =
+          task_with_peer t peer (fun peer ->
+              List.map_p
+                (fun input ->
+                  task peer input >>= fun output -> Lwt.return (input, output))
+                inputs
+              >>= fun pairs ->
+              let exception Error of a in
+              try
+                let outputs =
+                  List.fold_left
+                    (fun outputs (input, output) ->
+                      match output with
+                      | None ->
+                          raise (Error input)
+                      | Some output ->
+                          output :: outputs)
+                    []
+                    pairs
+                in
+                Lwt.return_some (List.rev outputs)
+              with Error input ->
+                t.on_failure peer input
+                >>= fun () -> add_peer_timed_out t peer ; Lwt.return_none)
+        in
+        let punish () = punish_peer t peer in
+        Some {task = task (); punish}
+
+  let create chain_db ~on_failure =
+    {
+      chain_db;
+      peers_with_task = P2p_peer.Id.Set.empty;
+      on_failure;
+      timeout_peers = Bounded_peers_ring.create 50;
+    }
+end
+
 module Advertise = struct
   let current_head chain_db ?(mempool = Mempool.empty) head =
     let chain_id = State.Chain.id chain_db.reader_chain_db.chain_state in

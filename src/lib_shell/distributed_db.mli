@@ -145,6 +145,45 @@ module Request : sig
     Block_header.t option Lwt.t
 end
 
+(** This worker implements a procedure to select a peer and processing
+   a task for this selected peer. By default, any connected peer can
+   be selected. If a peer is punished, it is greylisted. If it does
+   not respond (via a timeout), we add this peer into a bounded
+   queue. A peer is removed from this bounded queue if the queue
+   becomes full or if we were unable to choose a peer from the
+   available ones.  *)
+module Request_worker : sig
+  (** Internal state of the worker *)
+  type 'a t
+
+  (** Handler used to wait the answers or to punish a peer *)
+  type 'b handler
+
+  (** [worker state task data] returns a handler if a peer was
+     selected and starts the current [task peer data] with the
+     selected [peer]. *)
+  val worker :
+    'a t ->
+    (P2p_peer.Id.t -> 'a -> 'b option Lwt.t) ->
+    'a list ->
+    'b handler option
+
+  (** [wait handler] waits that the task behind the handler is
+     processed. The promise returns by [wait] is cancellable. *)
+  val wait : 'b handler -> 'b list option Lwt.t
+
+  (** [punish handler] punishes the peer selected for the task
+     associated with the handler. *)
+  val punish : 'b handler -> unit Lwt.t
+
+  (** [create chain_db on_failure] creates a worker associated to
+     [chain_db] for peer selection. The function [on_failure] is
+     called everytime the task returns [None] for one of the
+     data requested. *)
+  val create :
+    chain_db -> on_failure:(P2p_peer.Id.t -> 'a -> unit Lwt.t) -> 'a t
+end
+
 module Advertise : sig
   (** [current_head chain_db ?mempool head] sends a
       [Current_head (chain_id, head_header, mempool)] message to all known
