@@ -57,6 +57,7 @@ module Types = struct
   include Worker_state
 
   type parameters = {
+    data_dir : string;
     parent : Name.t option;
     (* inherit bootstrap status from parent chain validator *)
     db : Distributed_db.t;
@@ -663,12 +664,13 @@ let on_launch w _ parameters =
     } ;
   return nv
 
-let rec create ~start_testchain ~active_chains ?parent ~block_validator_process
-    start_prevalidator peer_validator_limits prevalidator_limits
-    block_validator global_valid_block_input global_chains_input db chain_state
-    limits =
+let rec create ~data_dir ~start_testchain ~active_chains ?parent
+    ~block_validator_process start_prevalidator peer_validator_limits
+    prevalidator_limits block_validator global_valid_block_input
+    global_chains_input db chain_state limits =
   let spawn_child ~parent epv pvl pl bl gvbi gci db n l =
     create
+      ~data_dir
       ~start_testchain
       ~active_chains
       ~parent
@@ -701,6 +703,7 @@ let rec create ~start_testchain ~active_chains ?parent ~block_validator_process
   end in
   let parameters =
     {
+      data_dir;
       parent;
       peer_validator_limits;
       start_prevalidator;
@@ -730,12 +733,13 @@ let rec create ~start_testchain ~active_chains ?parent ~block_validator_process
 
 (** Current block computation *)
 
-let create ~start_prevalidator ~start_testchain ~active_chains
+let create ~data_dir ~start_prevalidator ~start_testchain ~active_chains
     ~block_validator_process peer_validator_limits prevalidator_limits
     block_validator global_valid_block_input global_chains_input global_db
     state limits =
   (* hide the optional ?parent *)
   create
+    ~data_dir
     ~start_testchain
     ~active_chains
     ~block_validator_process

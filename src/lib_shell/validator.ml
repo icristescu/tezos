@@ -64,7 +64,7 @@ let create state db peer_validator_limits block_validator_limits
       active_chains = Chain_id.Table.create 7;
     }
 
-let activate v ~start_prevalidator ~validator_process chain_state =
+let activate v ~data_dir ~start_prevalidator ~validator_process chain_state =
   let chain_id = State.Chain.id chain_state in
   Validator_event.(emit activate_chain) chain_id
   >>= fun () ->
@@ -73,6 +73,7 @@ let activate v ~start_prevalidator ~validator_process chain_state =
       return chain
   | None ->
       Chain_validator.create
+        ~data_dir
         ~start_prevalidator
         ~start_testchain:v.start_testchain
         ~active_chains:v.active_chains

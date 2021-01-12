@@ -44,6 +44,7 @@ val shutdown : t -> unit Lwt.t
 (** Start the validation scheduler of a given chain. *)
 val activate :
   t ->
+  data_dir:string ->
   start_prevalidator:bool ->
   validator_process:Block_validator_process.t ->
   State.Chain.t ->

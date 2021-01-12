@@ -46,6 +46,7 @@ type limits = {
 }
 
 val create :
+  data_dir:string ->
   start_prevalidator:bool ->
   start_testchain:bool ->
   active_chains:t Chain_id.Table.t ->

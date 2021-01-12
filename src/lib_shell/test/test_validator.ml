@@ -96,6 +96,7 @@ let validator_events validator block_validator chain _switch () =
   Validator.activate
     ~start_prevalidator:false
     validator
+    ~data_dir:""
     ~validator_process:block_validator
     chain
   >>= function

@@ -362,6 +362,7 @@ let create ?(sandboxed = false) ?sandbox_parameters ~singleprocess
   (* TODO : Check that the testchain is correctly activated after a node restart *)
   Validator.activate
     validator
+    ~data_dir
     ~start_prevalidator
     ~validator_process
     mainchain_state
