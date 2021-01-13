@@ -69,7 +69,6 @@ module Types = struct
   type parameters = {
     data_dir : string;
     parent : Name.t option;
-    (* inherit bootstrap status from parent chain validator *)
     db : Distributed_db.t;
     chain_state : State.Chain.t;
     chain_db : Distributed_db.chain_db;
