@@ -71,6 +71,28 @@
    This last invariant does not take into account the memory space
    used for the introspection.
 
+   {3 Recovery mode}
+
+   The recovery mode remembers [headers] fetched when the [node] is
+   killed. First the [root_path] is renamed to [temporary_path] and a
+   fresh [root_path] is created. Then for each [range], if there is
+   the associated file in [temporary_path], it checks whether the file
+   is corrupted. If the file can be decoded, then it marks the range
+   as skippable and continues and the file is copied to [root_path].
+
+   Because the directory [root_path] is renamed to [temporary_path],
+   if the node is killed at the wrong time, i.e. valid files are still
+   in [temporary_path], then these files will be erased once the node
+   will be restarted. In practice, because headers are fetched in the
+   same order between two runs, and because the time to check whether
+   a file can be decoded is fast, such behavior seems quite difficult
+   to trigger. Indeed, between two runs, if everything went well, at
+   most one range needs to be fetched it the [target] changed.
+
+   Notice also that if the [range_size] is changed between two runs,
+   all the headers needs to be fetched gain since the name of the file
+   depends on the [range_size].
+
  *)
 
 (** The internal state of the bootstrapper. *)

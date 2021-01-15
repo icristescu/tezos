@@ -124,6 +124,26 @@ module Events = struct
       ~level:Warning
       ~pp1:Error_monad.pp_print_error
       ("trace", Error_monad.trace_encoding)
+
+  let range_file_exists_decoding_error =
+    declare_0
+      ~section
+      ~name:"bootstrapper_range_file_exists_decoding_error"
+      ~msg:
+        "a range file was written previously but could not be decoded. The \
+         range will be fetched again"
+      ~level:Info
+      ()
+
+  let range_file_exists_unix_error =
+    declare_0
+      ~section
+      ~name:"bootstrapper_range_file_exists_unix_error"
+      ~msg:
+        "a range file was written previously but a unix error happened. The \
+         range will be fetched again"
+      ~level:Info
+      ()
 end
 
 type block = Block_header.t * Operation.t list list
@@ -311,9 +331,10 @@ type t = {
 
 module Range_worker = Ranger.Make (Level_range)
 
-let range_filename configuration range =
+let range_filename ?(temporary = false) configuration range =
   let basename = Format.asprintf "%a" Level_range.pp range in
-  Filename.concat configuration.root_path basename
+  if temporary then Filename.concat configuration.temporary_path basename
+  else Filename.concat configuration.root_path basename
 
 let range_header_encoding range_size : Block_header.t list Data_encoding.t =
   Data_encoding.(
@@ -449,6 +470,39 @@ end = struct
                pp_write_range_error
                err)
 
+  let filter configuration range =
+    (* If the file was written in a previously run, it is now in the
+       temporary_path. *)
+    let temporary_range_filename =
+      range_filename ~temporary:true configuration range
+    in
+    if Sys.file_exists temporary_range_filename then
+      with_open_in temporary_range_filename (fun fd ->
+          let size = (Unix.fstat (Lwt_unix.unix_file_descr fd)).Unix.st_size in
+          let buffer = Bytes.create size in
+          Lwt_utils_unix.read_bytes fd buffer
+          >>= fun () ->
+          Lwt.return
+            (Data_encoding.Binary.of_bytes
+               (range_header_encoding configuration.range_size)
+               buffer))
+      >>= function
+      | Ok (Ok []) ->
+          (* a range cannot be empty *)
+          Events.(emit range_file_exists_decoding_error) ()
+          >>= fun () -> Lwt.return_none
+      | Ok (Ok (first :: _)) ->
+          let range_filename = range_filename configuration range in
+          Lwt_unix.rename temporary_range_filename range_filename
+          >>= fun () -> Lwt.return_some first.Block_header.shell.predecessor
+      | Ok (Error _) ->
+          Events.(emit range_file_exists_decoding_error) ()
+          >>= fun () -> Lwt.return_none
+      | Error _ ->
+          Events.(emit range_file_exists_unix_error) ()
+          >>= fun () -> Lwt.return_none
+    else Lwt.return_none
+
   let parameters configuration info ~target range =
     let tasks_in_parallel = configuration.parallel_ranges_header_fetched in
     let starts_with = Lwt.return (Block_header.hash target) in
@@ -459,8 +513,7 @@ end = struct
     let parallel_task = parallel_task configuration info target in
     let sequential_task = sequential_task configuration info in
     let recovery_task _ = configuration.getters.when_unable_to_fetch () in
-    (* FIXME: Implement recovery mode in a further commit *)
-    let filter _ = Lwt.return_none in
+    let filter = filter configuration in
     Range_worker.E
       {
         tasks_in_parallel;
@@ -576,6 +629,7 @@ end = struct
 
   let sequential_task configuration info range () blocks =
     Introspection.update_info info range Validating ;
+    let range_filename = range_filename configuration range in
     List.iter_es
       (fun block ->
         trace
@@ -587,6 +641,8 @@ end = struct
         Introspection.update_block_validated info block >>= return)
       blocks
     >>=? fun () ->
+    Lwt_unix.unlink range_filename
+    >>= fun () ->
     Introspection.update_info info range Processed ;
     return_some ()
 
@@ -614,18 +670,6 @@ end = struct
       }
 end
 
-(* Given a target compute the range to bootstrap from. *)
-let prepare_worker :
-    configuration ->
-    target:Block_header.t ->
-    (Block_header.t * Level_range.t) tzresult Lwt.t =
- fun configuration ~target ->
-  configuration.getters.get_current_head ()
-  >>= fun start ->
-  (* When target <= start, the worker will do nothing. *)
-  return
-    (target, Level_range.{from = start.shell.level; upto = target.shell.level})
-
 type error += Bootstrapper_error
 
 let () =
@@ -638,6 +682,39 @@ let () =
     Data_encoding.unit
     (function Bootstrapper_error -> Some () | _ -> None)
     (fun () -> Bootstrapper_error)
+
+let clean_directory directory =
+  Lwt.catch
+    (fun () ->
+      Lwt_stream.iter_p
+        (fun s ->
+          if s <> "." && s <> ".." then
+            Lwt_unix.unlink (Filename.concat directory s)
+          else Lwt.return_unit)
+        (Lwt_unix.files_of_directory directory)
+      >>= fun () -> return_unit)
+    (fun exn ->
+      Error_monad.trace
+        Bootstrapper_error
+        (Lwt.return (Error_monad.error_exn exn)))
+
+(* Given a target compute the range to bootstrap from. *)
+let prepare_worker :
+    configuration ->
+    target:Block_header.t ->
+    (Block_header.t * Level_range.t) tzresult Lwt.t =
+ fun configuration ~target ->
+  clean_directory configuration.temporary_path
+  >>=? fun () ->
+  Lwt_unix.rename configuration.root_path configuration.temporary_path
+  >>= fun () ->
+  Lwt_unix.mkdir configuration.root_path 0o755
+  >>= fun () ->
+  configuration.getters.get_current_head ()
+  >>= fun start ->
+  (* When target <= start, the worker will do nothing. *)
+  return
+    (target, Level_range.{from = start.shell.level; upto = target.shell.level})
 
 let main_worker configuration info target range =
   if Level_range.length range <= 0 then return_unit
