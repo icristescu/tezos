@@ -633,7 +633,7 @@ let read_and_patch_config_file ?(may_override_network = false)
         let expected_connections = x in
         let max_connections = max 1 (3 * x / 2) in
         let checkpoint_heuristic_threshold =
-          max 1 (min ((expected_connections / 2) + 1) 10)
+          max 1 (min ((expected_connections + 1) / 2) 10)
         in
         let checkpoint_heuristic_expected =
           max 1 (min expected_connections 15)

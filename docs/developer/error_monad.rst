@@ -298,7 +298,7 @@ categories of errors:
    notation.
 
 The registration scheme also uses data encodings. Here’s an example from
-the :ref:`validator<validator_component>`:
+the :ref:`validation<validation>`:
 
 .. code-block:: ocaml
 

@@ -1,3 +1,5 @@
+.. _synchronisation_heuristic:
+
 Synchronisation heuristic
 =========================
 

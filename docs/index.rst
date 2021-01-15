@@ -117,6 +117,8 @@ in the :ref:`introduction <howtoget>`.
    shell/the_big_picture
    shell/validation
    shell/sync
+   shell/consensus_heuristic
+   shell/bootstrapper
    shell/p2p
    shell/p2p_api
    shell/micheline
