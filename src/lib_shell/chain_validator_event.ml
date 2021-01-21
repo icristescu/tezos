@@ -71,46 +71,60 @@ let loading_protocol =
     ~pp1:Protocol_hash.pp
     ("protocol", Protocol_hash.encoding)
 
-module Bootstrapper = struct
-  let section = ["node"; "chain_validator"; "bootstrapper"]
+module Checkpoint_heuristic = struct
+  let section = ["node"; "chain_validator"; "checkpoint_heuristic"]
 
-  let unable_to_fetch =
+  let started =
+    declare_0
+      ~section
+      ~name:"checkpoint_heuristic_started"
+      ~level:Notice
+      ~msg:"Checkpoint heuristic started"
+      ()
+
+  let need_more_checkpoints =
+    declare_2
+      ~section
+      ~name:"checkpoint_heuristic_need_more_checkpoints"
+      ~level:Notice
+      ~msg:
+        "too few candidates to get a consensus. Rcv/Exp: {received}/{expected}."
+      ("received", Data_encoding.int31)
+      ("expected", Data_encoding.int31)
+
+  let need_more_checkpoints_no_consensus =
+    declare_3
+      ~section
+      ~name:"checkpoint_heuristic_need_more_checkpoints_no_consensus"
+      ~level:Notice
+      ~msg:
+        "did not receive {threshold} candidates with the same value. Rcv/Exp: \
+         {received}/{expected}"
+      ("threshold", Data_encoding.int31)
+      ("received", Data_encoding.int31)
+      ("expected", Data_encoding.int31)
+
+  let no_consensus =
+    declare_0
+      ~section
+      ~name:"checkpoint_heuristic_no_consensus"
+      ~level:Notice
+      ~msg:"no consensus found"
+      ()
+
+  let consensus =
     declare_1
       ~section
-      ~name:"bootstrapper_unable_to_fetch"
-      ~level:Info
-      ~msg:"Unable to fetch some ressources. Try again in {delay} seconds"
+      ~name:"checkpoint_heuristic_consensus"
+      ~level:Notice
+      ~msg:"consensus found on {hash}"
+      ("hash", Block_hash.encoding)
+
+  let retry =
+    declare_1
+      ~section
+      ~name:"checkpoint_heuristic_retry"
+      ~level:Notice
+      ~msg:"retry consensus heuristic in {delay} seconds"
       ("delay", Time.System.Span.encoding)
-
-  let not_enough_peers =
-    declare_1
-      ~section
-      ~name:"bootstrapper_not_enough_peers"
-      ~level:Warning
-      ~msg:
-        "Could not fetch the next range of {ressource}. Not enough peer. \
-         Maybe a configuration issue?"
-      ("ressource", Data_encoding.string)
-
-  let fetching_header_timeout =
-    declare_2
-      ~section
-      ~name:"bootstrapper_fetching_header_timeout"
-      ~level:Warning
-      ~msg:
-        "Unable to fetch header of block level {level} with {peer}, the delay \
-         has expired."
-      ("level", Data_encoding.int32)
-      ("peer", P2p_peer.Id.encoding)
-
-  let fetching_operations_timeout =
-    declare_2
-      ~section
-      ~name:"bootstrapper_fetching_operations_timeout"
-      ~level:Warning
-      ~msg:
-        "Unable to fetch operations of block level {level} with {peer}, the \
-         delay has expired."
-      ("level", Data_encoding.int32)
-      ("peer", P2p_peer.Id.encoding)
 end

@@ -252,7 +252,10 @@ let init_checkpoint_consensus parameters peers_table request_checkpoint =
   let threshold = parameters.limits.checkpoint.threshold in
   let expected = parameters.limits.checkpoint.expected in
   let job () =
+    let update_received = ref 0 in
     let checkpoint = Consensus_heuristic.create ~threshold ~expected () in
+    Chain_validator_event.(emit Checkpoint_heuristic.started) ()
+    >>= fun () ->
     P2p_peer.Error_table.fold_keys
       (fun peer _ ->
         let timeout =
@@ -262,11 +265,29 @@ let init_checkpoint_consensus parameters peers_table request_checkpoint =
             | None ->
                 Lwt.return_unit
             | Some header ->
+                incr update_received ;
                 Consensus_heuristic.update checkpoint (peer, header) ;
                 Lwt.return_unit))
       peers_table
       Lwt.return_unit
-    >>= fun () -> Lwt.return (Consensus_heuristic.get_state checkpoint)
+    >>= fun () ->
+    let state = Consensus_heuristic.get_state checkpoint in
+    ( match state with
+    | Consensus_heuristic.Need_more_candidates ->
+        if !update_received < threshold then
+          Chain_validator_event.(
+            emit Checkpoint_heuristic.need_more_checkpoints)
+            (!update_received, expected)
+        else
+          Chain_validator_event.(
+            emit Checkpoint_heuristic.need_more_checkpoints_no_consensus)
+            (threshold, !update_received, expected)
+    | Consensus_heuristic.No_consensus _ ->
+        Chain_validator_event.(emit Checkpoint_heuristic.no_consensus) ()
+    | Consensus_heuristic.Consensus head ->
+        Chain_validator_event.(emit Checkpoint_heuristic.consensus)
+          (Block_header.hash head) )
+    >>= fun () -> Lwt.return state
   in
   Consensus_heuristic.Worker.create
     ~name:"Checkpoint heuristic"
