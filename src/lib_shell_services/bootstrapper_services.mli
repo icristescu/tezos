@@ -61,4 +61,6 @@ module Introspection : sig
    or the [info] of the previous task if there is one. *)
 
   val pp : Format.formatter -> info -> unit
+
+  val encoding : state Data_encoding.t
 end

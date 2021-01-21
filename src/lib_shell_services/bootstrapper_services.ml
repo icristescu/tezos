@@ -247,4 +247,239 @@ module Introspection = struct
           pp_range_info
           range_info)
       sorted_ranges
+
+  let step_encoding =
+    let open Data_encoding in
+    union
+      [ case
+          (Tag 0)
+          ~title:"step_encoding.Fetching_headers"
+          (obj1 (req "kind" (constant "Fetching_headers")))
+          (function Fetching_headers -> Some () | _ -> None)
+          (fun () -> Fetching_headers);
+        case
+          (Tag 1)
+          ~title:"step_encoding.Write_headers"
+          (obj1 (req "kind" (constant "Write_headers")))
+          (function Write_headers -> Some () | _ -> None)
+          (fun () -> Write_headers);
+        case
+          (Tag 2)
+          ~title:"step_encoding.Waiting_for_fetching_operations"
+          (obj1 (req "kind" (constant "Waiting_for_fetching_operations")))
+          (function Waiting_for_fetching_operations -> Some () | _ -> None)
+          (fun () -> Waiting_for_fetching_operations);
+        case
+          (Tag 3)
+          ~title:"step_encoding.Fetching_operations"
+          (obj1 (req "kind" (constant "Fetching_operations")))
+          (function Fetching_operations -> Some () | _ -> None)
+          (fun () -> Fetching_operations);
+        case
+          (Tag 4)
+          ~title:"step_encoding.Waiting_for_validation"
+          (obj1 (req "kind" (constant "Waiting_for_validation")))
+          (function Waiting_for_validation -> Some () | _ -> None)
+          (fun () -> Waiting_for_validation);
+        case
+          (Tag 5)
+          ~title:"step_encoding.Validating"
+          (obj1 (req "kind" (constant "Validating")))
+          (function Validating -> Some () | _ -> None)
+          (fun () -> Validating);
+        case
+          (Tag 6)
+          ~title:"step_encoding.Processed"
+          (obj1 (req "kind" (constant "Processed")))
+          (function Processed -> Some () | _ -> None)
+          (fun () -> Processed) ]
+
+  let range_info_encoding =
+    let open Data_encoding in
+    def
+      "bootstrapper.introspection.range_info"
+      ~description:"range_info encoding"
+    @@ conv
+         (fun { current_step;
+                beginning;
+                fetching_headers_time;
+                write_headers_time;
+                waiting_for_fetching_operations_time;
+                fetching_operations_time;
+                waiting_for_validation_time;
+                validating_time;
+                retries } ->
+           ( current_step,
+             beginning,
+             fetching_headers_time,
+             write_headers_time,
+             waiting_for_fetching_operations_time,
+             fetching_operations_time,
+             waiting_for_validation_time,
+             validating_time,
+             retries ))
+         (fun ( current_step,
+                beginning,
+                fetching_headers_time,
+                write_headers_time,
+                waiting_for_fetching_operations_time,
+                fetching_operations_time,
+                waiting_for_validation_time,
+                validating_time,
+                retries ) ->
+           {
+             current_step;
+             beginning;
+             fetching_headers_time;
+             write_headers_time;
+             waiting_for_fetching_operations_time;
+             fetching_operations_time;
+             waiting_for_validation_time;
+             validating_time;
+             retries;
+           })
+         (obj9
+            (req "current_step" step_encoding)
+            (req "beginning" Time.System.encoding)
+            (req "fetching_headers_time" Time.System.Span.encoding)
+            (req "write_headers_time" Time.System.Span.encoding)
+            (req
+               "waiting_for_fetching_operations_time"
+               Time.System.Span.encoding)
+            (req "fetching_operations_time" Time.System.Span.encoding)
+            (req "waiting_for_validation_time" Time.System.Span.encoding)
+            (req "validation_time" Time.System.Span.encoding)
+            (req "retries" int31))
+
+  let status_encoding =
+    let open Data_encoding in
+    union
+      [ case
+          (Tag 0)
+          ~title:"status_encoding.return"
+          (obj3
+             (req "kind" (constant "Return"))
+             (req "time" float)
+             (req "result" (result_encoding unit)))
+          (function
+            | Lwt.Return (t, r) -> Some ((), Ptime.to_float_s t, r) | _ -> None)
+          (fun ((), s, r) ->
+            match Ptime.of_float_s s with
+            | Some t ->
+                Lwt.Return (t, r)
+            | None ->
+                invalid_arg "Time.System.Span.encoding");
+        case
+          (Tag 1)
+          ~title:"status_encoding.sleep"
+          (obj1 (req "kind" (constant "Sleep")))
+          (function Lwt.Sleep -> Some () | _ -> None)
+          (fun () -> Lwt.Sleep);
+        case
+          (Tag 2)
+          ~title:"status_encoding.fail"
+          (obj2 (req "kind" (constant "Fail")) (req "exn" string))
+          (function
+            | Lwt.Fail exc ->
+                let s = Printexc.to_string exc in
+                Some ((), s)
+            | _ ->
+                None)
+          (fun ((), exn) -> invalid_arg exn) ]
+
+  let set_encoding =
+    let open Data_encoding in
+    conv
+      (fun s -> Set.fold (fun e a -> e :: a) s [])
+      (fun l -> Set.of_list l)
+      (list Level_range.encoding)
+
+  let range_info_table_encoding =
+    let open Data_encoding in
+    conv
+      (fun t ->
+        Table.fold (fun k e a -> (k, e) :: a) t []
+        |> List.fast_sort compare_bindings)
+      (fun l ->
+        let t = Table.create (List.length l) in
+        List.iter (fun (k, e) -> Table.add t k e) l ;
+        t)
+      (list (tup2 Level_range.encoding range_info_encoding))
+
+  let info_encoding =
+    let open Data_encoding in
+    def "bootstrapper.introspection.info" ~description:"bootstrapper info"
+    @@ conv
+         (fun { started;
+                status;
+                ranges_processed;
+                range_info;
+                target;
+                validated_blocks;
+                blocks_to_validate } ->
+           ( started,
+             status,
+             ranges_processed,
+             range_info,
+             target,
+             validated_blocks,
+             blocks_to_validate ))
+         (fun ( started,
+                status,
+                ranges_processed,
+                range_info,
+                target,
+                validated_blocks,
+                blocks_to_validate ) ->
+           {
+             started;
+             status;
+             ranges_processed;
+             range_info;
+             target;
+             validated_blocks;
+             blocks_to_validate;
+           })
+         (obj7
+            (req "started" Time.System.encoding)
+            (req "status" status_encoding)
+            (req "ranges_processed" set_encoding)
+            (req "range_info" range_info_table_encoding)
+            (req "target" Block_header.encoding)
+            (req "validated_blocks" int32)
+            (req "blocks_to_validate" int32))
+
+  let option_encoding encoding =
+    let open Data_encoding in
+    union
+      [ case
+          (Tag 0)
+          ~title:"Bootstrapper.State.Active"
+          (obj2 (req "kind" (constant "Some")) (req "info" encoding))
+          (function Some e -> Some ((), e) | _ -> None)
+          (fun ((), e) -> Some e);
+        case
+          (Tag 1)
+          ~title:"Bootstrapper.State.Active"
+          (obj1 (req "kind" (constant "None")))
+          (function None -> Some () | _ -> None)
+          (fun () -> None) ]
+
+  let encoding =
+    let open Data_encoding in
+    union
+      [ case
+          (Tag 0)
+          ~title:"Bootstrapper.State.Active"
+          (obj2 (req "kind" (constant "Active")) (req "info" info_encoding))
+          (function Active i -> Some ((), i) | _ -> None)
+          (fun ((), i) -> Active i);
+        case
+          (Tag 1)
+          ~title:"Bootstrapper.State.Inactive"
+          (obj2
+             (req "kind" (constant "Inactive"))
+             (req "info" (option_encoding info_encoding)))
+          (function Inactive i -> Some ((), i) | _ -> None)
+          (fun ((), i) -> Inactive i) ]
 end
