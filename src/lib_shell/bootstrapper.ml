@@ -23,6 +23,8 @@
 (*                                                                           *)
 (*****************************************************************************)
 
+open Bootstrapper_services
+
 type block = Block_header.t * Operation.t list list
 
 type consistency_checker = Block_hash.t -> bool Lwt.t
@@ -92,55 +94,8 @@ let with_atomic_open_out configuration filename f =
   >>=? fun res ->
   Lwt_unix.rename temp_file filename >>= fun () -> Lwt.return (Ok res)
 
-module Level_range = Ranger.Int32
-
 module Introspection = struct
-  module Level_range = Level_range
-
-  type step =
-    | Fetching_headers
-    | Write_headers
-    | Waiting_for_fetching_operations
-    | Fetching_operations
-    | Waiting_for_validation
-    | Validating
-    | Processed
-
-  type range_info = {
-    mutable current_step : step;
-    mutable beginning : Time.System.t;
-    mutable fetching_headers_time : Ptime.Span.t;
-    mutable write_headers_time : Ptime.Span.t;
-    mutable waiting_for_fetching_operations_time : Ptime.Span.t;
-    mutable fetching_operations_time : Ptime.Span.t;
-    mutable waiting_for_validation_time : Ptime.Span.t;
-    mutable validating_time : Ptime.Span.t;
-    mutable retries : int;
-  }
-
-  module Table = Hashtbl.Make (struct
-    type t = Level_range.t
-
-    let equal = ( = )
-
-    let hash = Hashtbl.hash
-  end)
-
-  module Set = Set.Make (struct
-    type t = Level_range.t
-
-    let compare = compare
-  end)
-
-  type info = {
-    started : Time.System.t;
-    mutable status : (Time.System.t * unit tzresult) Lwt.state;
-    mutable ranges_processed : Set.t;
-    range_info : range_info Table.t;
-    target : Block_header.t;
-    mutable validated_blocks : Int32.t;
-    mutable blocks_to_validate : Int32.t;
-  }
+  include Bootstrapper_services.Introspection
 
   let empty_info target =
     let started = Systime_os.now () in
@@ -243,124 +198,12 @@ module Introspection = struct
         () (* Not supposed to happen *)
     | Some infos ->
         infos.retries <- infos.retries + 1
-
-  let pp_step fmt = function
-    | Fetching_headers ->
-        Format.fprintf fmt "fetching headers"
-    | Write_headers ->
-        Format.fprintf fmt "write headers"
-    | Waiting_for_fetching_operations ->
-        Format.fprintf fmt "waiting for fetching operations"
-    | Fetching_operations ->
-        Format.fprintf fmt "fetching operations"
-    | Waiting_for_validation ->
-        Format.fprintf fmt "waiting for validation"
-    | Validating ->
-        Format.fprintf fmt "validating"
-    | Processed ->
-        Format.fprintf fmt "Processed"
-
-  let pp_status fmt = function
-    | Lwt.Return (over, Ok ()) ->
-        Format.fprintf
-          fmt
-          "Successfully finished at %a@."
-          Time.System.pp_hum
-          over
-    | Lwt.Return (over, Error _) ->
-        Format.fprintf fmt "Failed at %a@." Time.System.pp_hum over
-    | Lwt.Fail exn ->
-        Format.fprintf fmt "Promise failed with %s@." (Printexc.to_string exn)
-    | Lwt.Sleep ->
-        Format.fprintf fmt "Ongoing@."
-
-  let pp_range_info fmt
-      { current_step;
-        beginning;
-        fetching_headers_time;
-        write_headers_time;
-        waiting_for_fetching_operations_time;
-        fetching_operations_time;
-        waiting_for_validation_time;
-        validating_time;
-        retries } =
-    Format.fprintf fmt "Started: %a@." Time.System.pp_hum beginning ;
-    Format.fprintf fmt "Current step: %a@." pp_step current_step ;
-    Format.fprintf fmt "Retries: %d@." retries ;
-    List.iter
-      (fun (name, span) ->
-        if Ptime.Span.(span <> zero) then
-          Format.fprintf fmt "%s: %a@." name Ptime.Span.pp span)
-      [ ("fetching headers", fetching_headers_time);
-        ("write headers", write_headers_time);
-        ( "waiting for fetching operations",
-          waiting_for_fetching_operations_time );
-        ("fetching operations", fetching_operations_time);
-        ("waiting for validation", waiting_for_validation_time);
-        ("validating", validating_time) ]
-
-  let pp fmt
-      { started;
-        status;
-        ranges_processed;
-        range_info;
-        target;
-        validated_blocks;
-        blocks_to_validate } =
-    Format.fprintf fmt "BOOTSTRAPPER INFO:@." ;
-    Format.fprintf
-      fmt
-      "Target hash     : %a@."
-      Block_hash.pp
-      (Block_header.hash target) ;
-    Format.fprintf
-      fmt
-      "Target level    : %ld@."
-      target.Block_header.shell.level ;
-    Format.fprintf fmt "Starting time    : %a@." Time.System.pp_hum started ;
-    Format.fprintf fmt "Status           : %a@." pp_status status ;
-    Format.fprintf
-      fmt
-      "Range processed  : %d@."
-      (Set.cardinal ranges_processed) ;
-    Format.fprintf fmt "Validated blocks : %ld@." validated_blocks ;
-    Format.fprintf fmt "blocks to validate : %ld@." blocks_to_validate ;
-    Format.fprintf
-      fmt
-      "Range processed  : %d@."
-      (Set.cardinal ranges_processed) ;
-    Format.fprintf fmt "Range statistics:@." ;
-    let ranges_list : (Level_range.t * range_info) list ref = ref [] in
-    Table.iter
-      (fun range range_info ->
-        ranges_list := (range, range_info) :: !ranges_list)
-      range_info ;
-    let sorted_ranges =
-      List.fast_sort
-        (fun (_, {beginning; _}) (_, {beginning = beginning'; _}) ->
-          Ptime.compare beginning beginning')
-        !ranges_list
-    in
-    List.iter
-      (fun (range, range_info) ->
-        Format.fprintf
-          fmt
-          "Range %a:@.%a@."
-          Level_range.pp
-          range
-          pp_range_info
-          range_info)
-      sorted_ranges
 end
-
-type state =
-  | Active of Introspection.info
-  | Inactive of Introspection.info option
 
 type t = {
   mutable job : unit tzresult Lwt.t option;
   mutable last_result : error trace option;
-  mutable state : state;
+  mutable state : Introspection.state;
   mutable next_target : Block_header.t option;
   configuration : configuration;
 }

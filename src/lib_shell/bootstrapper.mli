@@ -118,50 +118,6 @@ type getters = {
      [bootstrapper] current tasks fails also with this error. *)
 }
 
-module Introspection : sig
-  (** Introspection module for the bootstrapper. *)
-
-  module Level_range = Ranger.Int32
-
-  (** Step associated to each range which is being processed. *)
-  type step =
-    | Fetching_headers
-    | Write_headers
-    | Waiting_for_fetching_operations
-    | Fetching_operations
-    | Waiting_for_validation
-    | Validating
-    | Processed
-
-  module Table : Hashtbl.S with type key = Level_range.t
-
-  module Set : Set.S with type elt = Level_range.t
-
-  type range_info = {
-    mutable current_step : step;
-    mutable beginning : Time.System.t;
-    mutable fetching_headers_time : Ptime.Span.t;
-    mutable write_headers_time : Ptime.Span.t;
-    mutable waiting_for_fetching_operations_time : Ptime.Span.t;
-    mutable fetching_operations_time : Ptime.Span.t;
-    mutable waiting_for_validation_time : Ptime.Span.t;
-    mutable validating_time : Ptime.Span.t;
-    mutable retries : int;
-  }
-
-  type info = private {
-    started : Time.System.t;
-    mutable status : (Time.System.t * unit tzresult) Lwt.state;
-    mutable ranges_processed : Set.t;
-    range_info : range_info Table.t;
-    target : Block_header.t;
-    mutable validated_blocks : Int32.t;
-    mutable blocks_to_validate : Int32.t;
-  }
-
-  val pp : Format.formatter -> info -> unit
-end
-
 type configuration = {
   root_path : string;
       (** root_path where the bootstrapper will store its files *)
@@ -199,12 +155,6 @@ val wait : t -> unit tzresult Lwt.t
      bootstrapper. Is a noop if the bootstrapper was inactive. *)
 val cancel : t -> unit
 
-type state =
-  | Active of Introspection.info  (** Info of the current job *)
-  | Inactive of Introspection.info option
-      (** Contains info of the current task if the bootstrapper is [Active]
-   or the [info] of the previous task if there is one. *)
-
 (** [state bootstrapper] returns the current state of the
    bootstrapper. *)
-val state : t -> state
+val state : t -> Bootstrapper_services.Introspection.state
