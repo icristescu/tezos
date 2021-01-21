@@ -109,6 +109,15 @@ module S : sig
       bool * Chain_validator_worker_state.Event.synchronisation_status )
     RPC_service.t
 
+  val bootstrap_info :
+    ( [`GET],
+      prefix,
+      prefix,
+      unit,
+      unit,
+      Bootstrapper_services.Introspection.state )
+    RPC_service.t
+
   val force_bootstrapped :
     ([`PATCH], prefix, prefix, unit, bool, unit) RPC_service.t
 

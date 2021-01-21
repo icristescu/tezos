@@ -155,6 +155,12 @@ let rpc_directory ~user_activated_upgrades ~user_activated_protocol_overrides
           return
             Chain_validator.
               (is_bootstrapped chain_validator, sync_status chain_validator)) ;
+  register0 S.bootstrap_info (fun chain () () ->
+      match Validator.get validator (State.Chain.id chain) with
+      | Error _ ->
+          Lwt.fail Not_found
+      | Ok chain_validator ->
+          return (Chain_validator.get_bootstrapper_state chain_validator)) ;
   register0 S.force_bootstrapped (fun chain () b ->
       match Validator.get validator (State.Chain.id chain) with
       | Error _ ->

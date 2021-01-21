@@ -88,6 +88,13 @@ module S = struct
       ~output:bootstrap_encoding
       RPC_path.(path / "is_bootstrapped")
 
+  let bootstrap_info =
+    RPC_service.get_service
+      ~description:"The bootstrap info of a chain"
+      ~query:RPC_query.empty
+      ~output:Bootstrapper_services.Introspection.encoding
+      RPC_path.(path / "bootstrap_info")
+
   let bootstrapped_flag_encoding =
     let open Data_encoding in
     obj1 (req "bootstrapped" bool)

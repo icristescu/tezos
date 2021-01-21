@@ -164,3 +164,5 @@ val last_events :
 
 val ddb_information :
   t -> Chain_validator_worker_state.Distributed_db_state.view
+
+val get_bootstrapper_state : t -> Bootstrapper_services.Introspection.state

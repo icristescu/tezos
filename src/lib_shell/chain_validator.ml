@@ -1001,3 +1001,8 @@ let ddb_information t =
 let sync_status w =
   let nv = Worker.state w in
   Synchronisation_heuristic.get_status nv.synchronisation_state
+
+let get_bootstrapper_state w =
+  let nv = Worker.state w in
+  let t = nv.bootstrapper.bootstrapper in
+  Bootstrapper.state t
