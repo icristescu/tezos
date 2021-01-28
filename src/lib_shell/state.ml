@@ -1128,15 +1128,6 @@ module Block = struct
           fail_unless acceptable_block (Checkpoint_error (hash, None))
           >>=? fun () ->
           let commit = context_hash in
-          Context.exists chain_state.context_index.data commit
-          >>= fun exists ->
-          fail_unless
-            exists
-            (failure
-               "State.Block.store: context hash %a not found in context"
-               Context_hash.pp
-               commit)
-          >>=? fun _ ->
           fail_unless
             (Context_hash.equal block_header.shell.context commit)
             (Inconsistent_hash (commit, block_header.shell.context))
