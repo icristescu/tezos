@@ -42,6 +42,15 @@ val get_chain_id :
   Client.t ->
   JSON.t Lwt.t
 
+(** Call RPC /chain/[chain]/blocks/[block] *)
+val get_block :
+  ?node:Node.t ->
+  ?hooks:Process.hooks ->
+  ?chain:string ->
+  ?block:string ->
+  Client.t ->
+  JSON.t Lwt.t
+
 (** Call RPC /chain/[chain] *)
 val force_bootstrapped :
   ?node:Node.t ->

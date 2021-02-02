@@ -36,6 +36,10 @@ let get_chain_id ?node ?hooks ?(chain = "main") client =
   let path = ["chains"; chain; "chain_id"] in
   Client.rpc ?node ?hooks GET path client
 
+let get_block ?node ?hooks ?(chain = "main") ?(block = "head") client =
+  let path = ["chains"; chain; "blocks"; block] in
+  Client.rpc ?node ?hooks GET path client
+
 let force_bootstrapped ?node ?hooks ?(chain = "main") ?(bootstrapped = true)
     client =
   let path = ["chains"; chain] in
