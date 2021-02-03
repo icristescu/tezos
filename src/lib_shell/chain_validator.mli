@@ -92,6 +92,7 @@ type limits = {
 }
 
 val create :
+  ?target:Block_hash.t * int32 ->
   data_dir:string ->
   start_prevalidator:bool ->
   start_testchain:bool ->

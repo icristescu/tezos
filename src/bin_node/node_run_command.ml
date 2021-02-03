@@ -189,7 +189,7 @@ let init_identity_file (config : Node_config_file.t) =
     Event.(emit identity_generated) identity.peer_id
     >>= fun () -> return identity
 
-let init_node ?sandbox ?checkpoint ~identity ~singleprocess
+let init_node ?sandbox ?target ~identity ~singleprocess
     (config : Node_config_file.t) =
   (* TODO "WARN" when pow is below our expectation. *)
   ( match config.p2p.discovery_addr with
@@ -276,7 +276,7 @@ let init_node ?sandbox ?checkpoint ~identity ~singleprocess
       context_root = Node_data_version.context_dir config.data_dir;
       protocol_root = Node_data_version.protocol_dir config.data_dir;
       p2p = p2p_config;
-      checkpoint;
+      target;
       enable_testchain = config.p2p.enable_testchain;
       disable_mempool = config.p2p.disable_mempool;
     }
@@ -356,7 +356,7 @@ let init_rpc (config : Node_config_file.t) node =
     config.rpc.listen_addrs
     []
 
-let run ?verbosity ?sandbox ?checkpoint ~singleprocess
+let run ?verbosity ?sandbox ?target ~singleprocess
     (config : Node_config_file.t) =
   Node_data_version.ensure_data_dir config.data_dir
   >>=? fun () ->
@@ -384,7 +384,7 @@ let run ?verbosity ?sandbox ?checkpoint ~singleprocess
   Updater.init (Node_data_version.protocol_dir config.data_dir) ;
   Event.(emit starting_node) config.blockchain_network.chain_name
   >>= fun () ->
-  init_node ?sandbox ?checkpoint ~identity ~singleprocess config
+  init_node ?sandbox ?target ~identity ~singleprocess config
   >>= (function
         | Ok node ->
             return node
@@ -427,7 +427,7 @@ let run ?verbosity ?sandbox ?checkpoint ~singleprocess
   in
   Lwt_utils.never_ending ()
 
-let process sandbox verbosity checkpoint singleprocess args =
+let process sandbox verbosity target singleprocess args =
   let verbosity =
     let open Internal_event in
     match verbosity with [] -> None | [_] -> Some Info | _ -> Some Debug
@@ -446,23 +446,24 @@ let process sandbox verbosity checkpoint singleprocess args =
     | None ->
         return_unit )
     >>=? fun () ->
-    ( match checkpoint with
+    ( match target with
     | None ->
         return_none
     | Some s -> (
-      match Block_header.of_b58check s with
-      | Some b ->
-          return_some b
-      | None ->
-          failwith
-            "Failed to parse the provided checkpoint (Base58Check-encoded)." )
-    )
-    >>=? fun checkpoint ->
+        let l = String.split_on_char ',' s in
+        match l with
+        | [head; level] ->
+            return_some (Block_hash.of_b58check_exn head, Int32.of_string level)
+        | _ ->
+            failwith
+              "Failed to parse the provided target. A '<block_hash>,<level>' \
+               value was expected." ) )
+    >>=? fun target ->
     Lwt_lock_file.is_locked (Node_data_version.lock_file config.data_dir)
     >>=? function
     | false ->
         Lwt.catch
-          (fun () -> run ?sandbox ?verbosity ?checkpoint ~singleprocess config)
+          (fun () -> run ?sandbox ?verbosity ?target ~singleprocess config)
           (function
             | Unix.Unix_error (Unix.EADDRINUSE, "bind", "") ->
                 List.fold_right_es
@@ -521,10 +522,10 @@ module Term = struct
           ~docv:"FILE.json"
           ["sandbox"])
 
-  let checkpoint =
+  let target =
     let open Cmdliner in
     let doc =
-      "When asked to take a block hash as a checkpoint, the daemon will only \
+      "When asked to take a block hash as a target, the daemon will only \
        accept the chains that contains that block and those that might reach \
        it."
     in
@@ -534,8 +535,8 @@ module Term = struct
       & info
           ~docs:Node_shared_arg.Manpage.misc_section
           ~doc
-          ~docv:"<level>,<block_hash>"
-          ["checkpoint"])
+          ~docv:"<block_hash>"
+          ["target"])
 
   let singleprocess =
     let open Cmdliner in
@@ -551,7 +552,7 @@ module Term = struct
   let term =
     Cmdliner.Term.(
       ret
-        ( const process $ sandbox $ verbosity $ checkpoint $ singleprocess
+        ( const process $ sandbox $ verbosity $ target $ singleprocess
         $ Node_shared_arg.Term.args ))
 end
 

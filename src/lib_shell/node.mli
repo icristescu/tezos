@@ -37,7 +37,7 @@ type config = {
   protocol_root : string;
   patch_context : (Context.t -> Context.t tzresult Lwt.t) option;
   p2p : (P2p.config * P2p.limits) option;
-  checkpoint : Block_header.t option;
+  target : (Block_hash.t * int32) option;
   disable_mempool : bool;
       (** If [true], all non-empty mempools will be ignored. *)
   enable_testchain : bool;

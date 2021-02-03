@@ -96,7 +96,7 @@ type config = {
   protocol_root : string;
   patch_context : (Context.t -> Context.t tzresult Lwt.t) option;
   p2p : (P2p.config * P2p.limits) option;
-  checkpoint : Block_header.t option;
+  target : (Block_hash.t * int32) option;
   disable_mempool : bool;
   enable_testchain : bool;
 }
@@ -166,25 +166,6 @@ let default_chain_validator_limits =
     bootstrapper = default_bootstrapper_limits;
     worker_limits = default_workers_limits;
   }
-
-let may_update_checkpoint chain_state checkpoint history_mode =
-  match checkpoint with
-  | None ->
-      return_unit
-  | Some checkpoint -> (
-      State.best_known_head_for_checkpoint chain_state checkpoint
-      >>= fun new_head ->
-      Chain.set_head chain_state new_head
-      >>= fun _old_head ->
-      match history_mode with
-      | History_mode.Archive ->
-          State.Chain.set_checkpoint chain_state checkpoint
-          >>= fun () -> return_unit
-      | Full ->
-          State.Chain.set_checkpoint_then_purge_full chain_state checkpoint
-      | Rolling ->
-          State.Chain.set_checkpoint_then_purge_rolling chain_state checkpoint
-      )
 
 module Local_logging = Internal_event.Legacy_logging.Make_semantic (struct
   let name = "node.worker"
@@ -316,8 +297,8 @@ let create ?(sandboxed = false) ?sandbox_parameters ~singleprocess
       p2p = p2p_params;
       disable_mempool;
       enable_testchain;
-      checkpoint } peer_validator_limits block_validator_limits
-    prevalidator_limits chain_validator_limits history_mode =
+      target } peer_validator_limits block_validator_limits prevalidator_limits
+    chain_validator_limits history_mode =
   let (start_prevalidator, start_testchain) =
     match p2p_params with
     | Some _ ->
@@ -364,10 +345,8 @@ let create ?(sandboxed = false) ?sandbox_parameters ~singleprocess
       genesis
     >>=? fun (state, mainchain_state, _context_index, history_mode) ->
     return (validator_process, state, mainchain_state, history_mode))
-  >>=? fun (validator_process, state, mainchain_state, history_mode) ->
+  >>=? fun (validator_process, state, mainchain_state, _history_mode) ->
   check_and_fix_storage_consistency state validator_process
-  >>=? fun () ->
-  may_update_checkpoint mainchain_state checkpoint history_mode
   >>=? fun () ->
   let distributed_db = Distributed_db.create state p2p in
   store_known_protocols state
@@ -385,6 +364,7 @@ let create ?(sandboxed = false) ?sandbox_parameters ~singleprocess
   (* TODO : Check that the testchain is correctly activated after a node restart *)
   Validator.activate
     validator
+    ?target
     ~data_dir
     ~start_prevalidator
     ~validator_process
