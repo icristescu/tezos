@@ -629,9 +629,9 @@ let read_and_patch_config_file ?(may_override_network = false)
         let synchronisation_threshold =
           Option.value synchronisation_threshold ~default:(max (x / 4) 2)
         in
-        let min_connections = x / 2 in
+        let min_connections = max 1 (x / 2) in
         let expected_connections = x in
-        let max_connections = 3 * x / 2 in
+        let max_connections = max 1 (3 * x / 2) in
         let checkpoint_heuristic_threshold =
           max 1 (min ((expected_connections / 2) + 1) 10)
         in
