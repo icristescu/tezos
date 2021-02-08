@@ -238,7 +238,7 @@ module Conf = struct
 end
 
 module Store =
-  Irmin_pack.Layered.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
+  Irmin_pack_layered.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Hash)
