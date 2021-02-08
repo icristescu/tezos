@@ -235,10 +235,10 @@ module Conf = struct
   let entries = 32
 
   let stable_hash = 256
-end
+endIrmin_pack_layered
 
 module Store =
-  Irmin_pack.Layered.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
+  Irmin_pack_layered.Make_ext (Conf) (Irmin.Metadata.None) (Contents)
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Hash)
