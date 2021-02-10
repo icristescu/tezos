@@ -23,8 +23,6 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-open Filename.Infix
-
 (** Main *)
 
 module Term = struct
@@ -43,32 +41,16 @@ module Term = struct
     & pos 0 (some (parser, printer)) None
     & info [] ~docv:"UPGRADE" ~doc
 
-  let process subcommand data_dir config_file status =
-    let load_data_dir data_dir =
-      match data_dir with
-      | Some data_dir ->
-          return data_dir
-      | None -> (
-        match config_file with
-        | None ->
-            let default_config =
-              Node_config_file.default_data_dir // "config.json"
-            in
-            if Sys.file_exists default_config then
-              Node_config_file.read default_config
-              >>=? fun cfg -> return cfg.data_dir
-            else return Node_config_file.default_data_dir
-        | Some config_file ->
-            Node_config_file.read config_file
-            >>=? fun cfg -> return cfg.data_dir )
-    in
+  let process subcommand args status =
     let run =
       Internal_event_unix.init ()
       >>= fun () ->
       match subcommand with
       | Storage ->
-          load_data_dir data_dir
-          >>=? fun data_dir ->
+          Node_config_file.read args.Node_shared_arg.config_file
+          >>=? fun node_config ->
+          let data_dir = node_config.data_dir in
+          let genesis = node_config.blockchain_network.genesis in
           if status then Node_data_version.upgrade_status data_dir
           else
             trace
@@ -77,7 +59,11 @@ module Term = struct
             @@ Lwt_lock_file.create
                  ~unlink_on_exit:true
                  (Node_data_version.lock_file data_dir)
-            >>=? fun () -> Node_data_version.upgrade_data_dir data_dir
+            >>=? fun () ->
+            Node_data_version.upgrade_data_dir
+              ~data_dir
+              genesis
+              ~chain_name:node_config.blockchain_network.chain_name
     in
     match Lwt_main.run @@ Lwt_exit.wrap_and_exit run with
     | Ok () ->
@@ -92,9 +78,7 @@ module Term = struct
 
   let term =
     Cmdliner.Term.(
-      ret
-        ( const process $ subcommand_arg $ Node_shared_arg.Term.data_dir
-        $ Node_shared_arg.Term.config_file $ status ))
+      ret (const process $ subcommand_arg $ Node_shared_arg.Term.args $ status))
 end
 
 module Manpage = struct
