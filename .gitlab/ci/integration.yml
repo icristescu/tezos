@@ -361,6 +361,18 @@ integration:alpha_forge_block:
     - poetry run pytest tests_alpha/test_forge_block.py -s --log-dir=tmp 2>&1 | tee tmp/alpha_forge_block.out | tail
   stage: test
 
+integration:alpha_legacy_snapshots:
+  extends: .integration_python_template
+  script:
+    - poetry run pytest tests_alpha/test_legacy_snapshots.py -s --log-dir=tmp 2>&1 | tee tmp/alpha_legacy_snapshots.out | tail
+  stage: test
+
+integration:alpha_legacy_upgrade:
+  extends: .integration_python_template
+  script:
+    - poetry run pytest tests_alpha/test_legacy_upgrade.py -s --log-dir=tmp 2>&1 | tee tmp/alpha_legacy_upgrade.out | tail
+  stage: test
+
 integration:alpha_many_bakers:
   extends: .integration_python_template
   script:
