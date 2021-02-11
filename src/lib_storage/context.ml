@@ -311,12 +311,12 @@ let unshallow context =
   Store.Tree.list context.tree []
   >>= fun children ->
   P.Repo.batch context.index.repo (fun x y _ ->
-      Lwt_list.iter_s
+      List.iter_s
         (fun (s, k) ->
-          match k with
-          | `Contents ->
+          match Store.Tree.destruct k with
+          | `Contents _ ->
               Lwt.return ()
-          | `Node ->
+          | `Node _ ->
               Store.Tree.get_tree context.tree [s]
               >>= fun tree ->
               Store.save_tree ~clear:true context.index.repo x y tree
