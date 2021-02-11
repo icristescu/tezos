@@ -861,7 +861,7 @@ module Dumpable_context = struct
         Store.Tree.add tree key v >>= Lwt.return_some
 
   let add_node_hash (Batch (repo, _, _)) tree key hash =
-    Store.Tree.of_hash repo hash
+    Store.Tree.of_hash repo (`Node hash)
     >>= function
     | None ->
         Lwt.return_none
@@ -988,7 +988,7 @@ let validate_context_hash_consistency_and_commit ~data_hash
   let info =
     Irmin.Info.v ~date:(Time.Protocol.to_seconds timestamp) ~author message
   in
-  let data_tree = Store.Tree.shallow index.repo data_hash in
+  let data_tree = Store.Tree.shallow index.repo (`Node data_hash) in
   Store.Tree.add_tree tree current_data_key data_tree
   >>= fun node ->
   let node = Store.Tree.hash node in
@@ -1019,7 +1019,7 @@ let validate_context_hash_consistency_and_commit ~data_hash
     | None ->
         Lwt.return ctxt )
     >>= fun ctxt ->
-    let data_t = Store.Tree.shallow index.repo data_hash in
+    let data_t = Store.Tree.shallow index.repo (`Node data_hash) in
     Store.Tree.add_tree ctxt.tree current_data_key data_t
     >>= fun new_tree ->
     Store.Commit.v ctxt.index.repo ~info ~parents new_tree
