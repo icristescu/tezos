@@ -39,17 +39,15 @@ with open(PARAMETERS_FILE) as f:
     PARAMETERS["time_between_blocks"] = [str(BAKING_RATE), "0"]
     PARAMETERS["blocks_per_voting_period"] = BLOCKS_PER_VOTING_PERIOD
 
-
-def node_params(threshold=0):
-    return [
-        '--sync-latency',
-        '2',
-        '--synchronisation-threshold',
-        str(threshold),
-        '--connections',
-        '100',
-        '--enable-testchain',
-    ]
+PARAMS = [
+    '--sync-latency',
+    '2',
+    '--synchronisation-threshold',
+    '0',
+    '--connections',
+    '100',
+    '--enable-testchain',
+]
 
 
 def get_current_period_kind_delphi(client) -> dict:
@@ -66,8 +64,8 @@ def get_current_period_kind_delphi(client) -> dict:
 class TestVotingFull:
     def test_add_tmp_bootstrap_node(self, sandbox: Sandbox):
         """ launch tmp nodes just to bootstrap all other ones """
-        sandbox.add_node(10, params=node_params(0))
-        sandbox.add_node(11, params=node_params(0))
+        sandbox.add_node(10, params=PARAMS)
+        sandbox.add_node(11, params=PARAMS)
 
     def test_activate_proto_a(self, sandbox: Sandbox):
         delay = datetime.timedelta(seconds=0)
@@ -87,10 +85,10 @@ class TestVotingFull:
     def test_add_initial_nodes(self, sandbox: Sandbox):
         """We launch nodes with non-null synchronisation-threshold.
         This is to test the bootstrap heuristics with the testchain."""
-        sandbox.add_node(0, params=node_params(2))
-        sandbox.add_node(1, params=node_params(2))
-        sandbox.add_node(2, params=node_params(2))
-        sandbox.add_node(3, params=node_params(2))
+        sandbox.add_node(0, params=PARAMS)
+        sandbox.add_node(1, params=PARAMS)
+        sandbox.add_node(2, params=PARAMS)
+        sandbox.add_node(3, params=PARAMS)
 
     @pytest.mark.timeout(20)
     def test_bootstrap(self, sandbox: Sandbox):
