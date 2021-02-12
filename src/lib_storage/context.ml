@@ -52,6 +52,7 @@ let reporter () =
 let index_log_size = ref None
 
 let () =
+  Memtrace.trace_if_requested ();
   let verbose () =
     Logs.set_level (Some Logs.Debug) ;
     Logs.set_reporter (reporter ())

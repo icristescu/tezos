@@ -11,7 +11,8 @@
             tezos-stdlib-unix
             tezos-storage.sigs
             tezos-storage.helpers
-            tezos-storage.encoding)
+            tezos-storage.encoding
+            memtrace)
  (flags (:standard -open Tezos_shell_services
                    -open Tezos_base__TzPervasives
                    -open Tezos_stdlib_unix
