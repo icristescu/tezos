@@ -180,9 +180,9 @@ let counter = ref 0
 let total = ref 0
 
 let commit_stats () =
-  let num_objects = Irmin_layers.Stats.get_adds () in
+  let num_objects = Irmin_layers.Stats.get_add_count () in
   total := !total + num_objects ;
-  Irmin_layers.Stats.reset_adds () ;
+  (*Irmin_layers.Stats.reset_adds () ;*)
   (*Format.printf
     "Irmin stats: Objects created by commit %a = %d \n@."
     Store.Commit.pp_hash
@@ -198,6 +198,7 @@ let maxrss_stat h =
   in
   let objs = commit_stats () in
   let dt = Mtime_clock.now_ns () in
+  Format.printf "freeze stats %a\n%!" Irmin_layers.Stats.pp_latest ();
   Format.printf
     "%Ldns commit %a number %d, maxrss %d, objects %d\n%!"
     dt
@@ -206,8 +207,8 @@ let maxrss_stat h =
     !counter
     (get_maxrss ())
     objs
-
-let pp_stats () =
+(*
+let _pp_stats () =
   let stats = Irmin_layers.Stats.get () in
   let pp_comma ppf () = Fmt.pf ppf "," in
   let copied_objects =
@@ -247,7 +248,7 @@ let pp_stats () =
     stats.completed_freeze
     !total ;
   total := 0
-
+*)
 let raw_commit ~time ?(message = "") context =
   counter := succ !counter ;
   let info =
@@ -267,7 +268,8 @@ let raw_commit ~time ?(message = "") context =
            | Some x -> Lwt.return [x])
       | Error (`Msg msg) -> Lwt.fail_with (Format.sprintf "error reading hash %s" msg))
       >>= fun min_upper ->
-      pp_stats () ;
+              Format.printf "freeze called\n%!";
+      (*pp_stats () ;*)
       Store.freeze ~min_upper ~max:[h] context.index.repo )
    else
      Lwt.return_unit)
