@@ -158,7 +158,26 @@ module Contents = struct
 
   let pre_hash_ty = Irmin.Type.(unstage (pre_hash ty))
 
-  let pre_hash_v1 x = pre_hash_ty (x, ())
+  let pre_hash_v1 : t -> (string -> unit) -> unit =
+     let f x = pre_hash_ty (x, ()) in
+     fun v g ->
+       let s = ref "" in
+       let h u =
+         s := !s ^ u;
+         g u
+       in
+       f v h;
+       let s = !s in
+       let len = String.length s in
+       let s =
+         String.to_seq s
+         |> Seq.map Char.escaped
+         |> List.of_seq
+         |> String.concat ""
+       in
+       Printf.eprintf "pre_hash: len:%d %s of %s\n%!" len s (Bytes.to_string v);
+       ()
+
 
   let t = Irmin.Type.(like bytes ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
 
