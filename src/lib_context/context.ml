@@ -179,19 +179,7 @@ let current_predecessor_block_metadata_hash_key =
 let current_predecessor_ops_metadata_hash_key =
   ["predecessor_ops_metadata_hash"]
 
-let restore_integrity ?ppf index =
-  match Store.integrity_check ?ppf ~auto_repair:true index.repo with
-  | Ok (`Fixed n) ->
-      Ok (Some n)
-  | Ok `No_error ->
-      Ok None
-  | Error (`Cannot_fix msg) ->
-      error (failure "%s" msg)
-  | Error (`Corrupted n) ->
-      error
-        (failure
-           "unable to fix the corrupted context: %d bad entries detected"
-           n)
+let restore_integrity ?ppf index = ignore ppf ; ignore index ; Ok None
 
 let sync index =
   if index.readonly then Store.sync index.repo ;
