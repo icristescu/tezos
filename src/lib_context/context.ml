@@ -146,19 +146,10 @@ module Conf = struct
 end
 
 module Store =
-  Irmin_pack.Make_ext
-    (struct
-      let io_version = `V1
-    end)
-    (Conf)
-    (Metadata)
-    (Contents)
-    (Path)
-    (Branch)
+  Irmin_pack_layered.Make_ext (Conf) (Metadata) (Contents) (Path) (Branch)
     (Hash)
     (Node)
     (Commit)
-
 module P = Store.Private
 
 type index = {
@@ -247,7 +238,78 @@ let unshallow context =
               >|= fun _ -> ())
         children)
 
+let counter = ref 0
+
+let count = ref 0
+
+let first = ref true
+
+let total = ref 0
+
+let pp_commit_stats () =
+  (*let get_maxrss () =
+    let usage = Rusage.(get Self) in
+    let ( / ) = Int64.div in
+    Int64.to_int (usage.maxrss / 1024L / 1024L)
+  in*)
+  let objs = Irmin_layers.Stats.get_adds () in
+  total := !total + objs ;
+  Irmin_layers.Stats.reset_adds () ;
+  Format.printf
+    "commit_number %d, maxrss --, objects %d\n%!"
+    !count
+    (* (get_maxrss ()) *)
+    objs ;
+  incr count
+
+let pp_stats () =
+  let stats = Irmin_layers.Stats.get () in
+  let pp_comma ppf () = Fmt.pf ppf "," in
+  let copied_objects =
+    let ls' =
+      match
+        List.map2
+          ~when_different_lengths:()
+          (fun x y -> x + y)
+          stats.copied_contents
+          stats.copied_commits
+      with
+      | Error () ->
+          stats.copied_contents
+      | Ok ls ->
+          ls
+    in
+    match
+      List.map2
+        ~when_different_lengths:()
+        (fun x y -> x + y)
+        ls'
+        stats.copied_nodes
+    with
+    | Error () ->
+        stats.copied_nodes
+    | Ok ls'' ->
+        ls''
+  in
+  Format.printf
+    "%a Irmin stats: nb_freeze = %d copied_objects = %a waiting_freeze  = %a \
+     completed_freeze = %a \n\
+    \  objects added in upper since last freeze = %d \n\
+     @."
+    Time.System.pp_hum
+    (Systime_os.now ())
+    stats.nb_freeze
+    Fmt.(list ~sep:pp_comma int)
+    copied_objects
+    Fmt.(list ~sep:pp_comma float)
+    stats.waiting_freeze
+    Fmt.(list ~sep:pp_comma float)
+    stats.completed_freeze
+    !total ;
+  total := 0
+
 let raw_commit ~time ?(message = "") context =
+  counter := succ !counter ;
   let info =
     Irmin.Info.v ~date:(Time.Protocol.to_seconds time) ~author:"Tezos" message
   in
@@ -255,7 +317,20 @@ let raw_commit ~time ?(message = "") context =
   unshallow context
   >>= fun () ->
   Store.Commit.v context.index.repo ~info ~parents context.tree
-  >|= fun h ->
+  >>= fun h ->
+  pp_commit_stats () ;
+  ( if !first then (
+    first := false ;
+    pp_stats () ;
+    Store.freeze ~max:[h] context.index.repo )
+  else Lwt.return_unit )
+  >>= fun () ->
+  ( if !counter = 4000 then (
+    counter := 0 ;
+    pp_stats () ;
+    Store.freeze ~max:[h] context.index.repo )
+  else Lwt.return_unit )
+  >|= fun () ->
   Store.Tree.clear context.tree ;
   h
 
@@ -402,11 +477,37 @@ let add_predecessor_ops_metadata_hash v hash =
   raw_add v current_predecessor_ops_metadata_hash_key data
 
 (*-- Initialisation ----------------------------------------------------------*)
+let config ?readonly root =
+  let conf =
+    Irmin_pack.config
+      ?readonly
+      ?index_log_size:!index_log_size
+      ~freeze_throttle:`Cancel_existing
+      root
+  in
+  Irmin_pack_layered.config
+    ~conf
+    ~copy_in_upper:true
+    ~with_lower:false
+    ~blocking_copy_size:1000000
+    ()
 
 let init ?patch_context ?(readonly = false) root =
-  Store.Repo.v
-    (Irmin_pack.config ~readonly ?index_log_size:!index_log_size root)
-  >|= fun repo -> {path = root; repo; patch_context; readonly}
+  let config = config ~readonly root in
+  let open_store () =
+    Store.Repo.v config
+    >>= fun repo ->
+    let v = {path = root; repo; patch_context; readonly} in
+    Lwt.return v
+  in
+  Lwt.catch open_store (function
+      | Irmin_pack.Unsupported_version `V1 ->
+          Logs.app (fun l -> l "Migrating store to v2, this may take a while") ;
+          Store.migrate config ;
+          Logs.app (fun l -> l "Migration ended, opening the store") ;
+          open_store ()
+      | exn ->
+          Lwt.fail exn)
 
 let close index = Store.Repo.close index.repo
 
