@@ -35,9 +35,6 @@ type error +=
   | Context_not_found of Bytes.t
   | System_read_error of string
   | Inconsistent_context_dump
-  | Inconsistent_snapshot_file
-  | Inconsistent_snapshot_data
-  | Invalid_snapshot_version of string * string list
   | Restore_context_failure
 
 let () =
@@ -87,53 +84,6 @@ let () =
     empty
     (function Inconsistent_context_dump -> Some () | _ -> None)
     (fun () -> Inconsistent_context_dump) ;
-  register_error_kind
-    `Permanent
-    ~id:"context_dump.inconsistent_snapshot_file"
-    ~title:"Inconsistent snapshot file"
-    ~description:"Error while opening snapshot file"
-    ~pp:(fun ppf () ->
-      Format.fprintf
-        ppf
-        "Failed to read snapshot file. The provided file is inconsistent.")
-    empty
-    (function Inconsistent_snapshot_file -> Some () | _ -> None)
-    (fun () -> Inconsistent_snapshot_file) ;
-  register_error_kind
-    `Permanent
-    ~id:"context_dump.inconsistent_snapshot_data"
-    ~title:"Inconsistent snapshot data"
-    ~description:"The data provided by the snapshot is inconsistent"
-    ~pp:(fun ppf () ->
-      Format.fprintf
-        ppf
-        "The data provided by the snapshot file is inconsistent (context_hash \
-         does not correspond for block).")
-    empty
-    (function Inconsistent_snapshot_data -> Some () | _ -> None)
-    (fun () -> Inconsistent_snapshot_data) ;
-  register_error_kind
-    `Permanent
-    ~id:"context_dump.invalid_snapshot_version"
-    ~title:"Invalid snapshot version"
-    ~description:"The version of the snapshot to import is not valid"
-    ~pp:(fun ppf (found, expected) ->
-      Format.fprintf
-        ppf
-        "The snapshot to import has version \"%s\" but one of %a was expected."
-        found
-        Format.(
-          pp_print_list
-            ~pp_sep:(fun ppf () -> fprintf ppf ", ")
-            (fun ppf version -> fprintf ppf "\"%s\"" version))
-        expected)
-    (obj2 (req "found" string) (req "expected" (list string)))
-    (function
-      | Invalid_snapshot_version (found, expected) ->
-          Some (found, expected)
-      | _ ->
-          None)
-    (fun (found, expected) -> Invalid_snapshot_version (found, expected)) ;
   register_error_kind
     `Permanent
     ~id:"context_dump.restore_context_failure"
@@ -429,6 +379,62 @@ module Make (I : Dump_interface) = struct
         | err ->
             Lwt.fail err)
 end
+
+(* Legacy errors*)
+type error +=
+  | Inconsistent_snapshot_file
+  | Inconsistent_snapshot_data
+  | Invalid_snapshot_version of string * string list
+
+let () =
+  let open Data_encoding in
+  register_error_kind
+    `Permanent
+    ~id:"context_dump.inconsistent_snapshot_file"
+    ~title:"Inconsistent snapshot file"
+    ~description:"Error while opening snapshot file"
+    ~pp:(fun ppf () ->
+      Format.fprintf
+        ppf
+        "Failed to read snapshot file. The provided file is inconsistent.")
+    empty
+    (function Inconsistent_snapshot_file -> Some () | _ -> None)
+    (fun () -> Inconsistent_snapshot_file) ;
+  register_error_kind
+    `Permanent
+    ~id:"context_dump.inconsistent_snapshot_data"
+    ~title:"Inconsistent snapshot data"
+    ~description:"The data provided by the snapshot is inconsistent"
+    ~pp:(fun ppf () ->
+      Format.fprintf
+        ppf
+        "The data provided by the snapshot file is inconsistent (context_hash \
+         does not correspond for block).")
+    empty
+    (function Inconsistent_snapshot_data -> Some () | _ -> None)
+    (fun () -> Inconsistent_snapshot_data) ;
+  register_error_kind
+    `Permanent
+    ~id:"context_dump.invalid_snapshot_version"
+    ~title:"Invalid snapshot version"
+    ~description:"The version of the snapshot to import is not valid"
+    ~pp:(fun ppf (found, expected) ->
+      Format.fprintf
+        ppf
+        "The snapshot to import has version \"%s\" but one of %a was expected."
+        found
+        Format.(
+          pp_print_list
+            ~pp_sep:(fun ppf () -> fprintf ppf ", ")
+            (fun ppf version -> fprintf ppf "\"%s\"" version))
+        expected)
+    (obj2 (req "found" string) (req "expected" (list string)))
+    (function
+      | Invalid_snapshot_version (found, expected) ->
+          Some (found, expected)
+      | _ ->
+          None)
+    (fun (found, expected) -> Invalid_snapshot_version (found, expected))
 
 module Make_legacy (I : Dump_interface_legacy) = struct
   let current_version = "tezos-snapshot-1.1.0"
