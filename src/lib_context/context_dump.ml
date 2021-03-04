@@ -34,6 +34,7 @@ type error +=
   | System_write_error of string
   | Context_not_found of Bytes.t
   | System_read_error of string
+  | Inconsistent_context_dump
   | Inconsistent_snapshot_file
   | Inconsistent_snapshot_data
   | Invalid_snapshot_version of string * string list
@@ -74,6 +75,18 @@ let () =
     (obj1 (req "system_read_error" string))
     (function System_read_error e -> Some e | _ -> None)
     (fun e -> System_read_error e) ;
+  register_error_kind
+    `Permanent
+    ~id:"context_dump.inconsistent_context_dump"
+    ~title:"Inconsistent context dump"
+    ~description:"Error while reading context dump"
+    ~pp:(fun ppf () ->
+      Format.fprintf
+        ppf
+        "Failed to read context dump. The provided file is inconsistent.")
+    empty
+    (function Inconsistent_context_dump -> Some () | _ -> None)
+    (fun () -> Inconsistent_context_dump) ;
   register_error_kind
     `Permanent
     ~id:"context_dump.inconsistent_snapshot_file"
@@ -227,7 +240,7 @@ module Make (I : Dump_interface) = struct
       Lwt_unix.read fd neu blen 1_000_000
       >>= fun bread ->
       total := !total + bread ;
-      if bread = 0 then fail Inconsistent_snapshot_file
+      if bread = 0 then fail Inconsistent_context_dump
       else
         let neu =
           if bread <> 1_000_000 then Bytes.sub neu 0 (blen + bread) else neu
@@ -358,7 +371,7 @@ module Make (I : Dump_interface) = struct
       let first_pass () =
         get_command rbuf
         >>=? function
-        | Root -> return_unit | _ -> fail Inconsistent_snapshot_data
+        | Root -> return_unit | _ -> fail Inconsistent_context_dump
       in
       let rec second_pass batch ctxt context_hash notify =
         notify ()
@@ -376,14 +389,14 @@ module Make (I : Dump_interface) = struct
         | Eoc {info; parents} -> (
             I.set_context ~info ~parents ctxt context_hash
             >>= function
-            | false -> fail Inconsistent_snapshot_data | true -> return_unit )
+            | false -> fail Inconsistent_context_dump | true -> return_unit )
         | _ ->
-            fail Inconsistent_snapshot_data
+            fail Inconsistent_context_dump
       in
       let check_eof () =
         get_command rbuf
         >>=? function
-        | Eof -> return_unit | _ -> fail Inconsistent_snapshot_data
+        | Eof -> return_unit | _ -> fail Inconsistent_context_dump
       in
       first_pass ()
       >>=? fun block_data ->
