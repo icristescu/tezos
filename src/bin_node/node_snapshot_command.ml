@@ -175,9 +175,15 @@ module Term = struct
             ~block
             genesis
       | Import ->
+          let data_dir =
+            Option.value
+              args.data_dir
+              ~default:Node_config_file.default_data_dir
+          in
+          Lwt_unix.file_exists data_dir
+          >>= fun existing_data_dir ->
           Node_shared_arg.read_and_patch_config_file args
           >>=? fun node_config ->
-          let data_dir = node_config.data_dir in
           let ({genesis; _} : Node_config_file.blockchain_network) =
             node_config.blockchain_network
           in
@@ -186,9 +192,14 @@ module Term = struct
           let dir_cleaner () =
             Event.(emit cleaning_up_after_failure) data_dir
             >>= fun () ->
-            Lwt_utils_unix.remove_dir (Node_data_version.store_dir data_dir)
-            >>= fun () ->
-            Lwt_utils_unix.remove_dir (Node_data_version.context_dir data_dir)
+            if existing_data_dir then
+              (* Remove only context and store if the import directory
+                 was previously existing. *)
+              Lwt_utils_unix.remove_dir (Node_data_version.store_dir data_dir)
+              >>= fun () ->
+              Lwt_utils_unix.remove_dir
+                (Node_data_version.context_dir data_dir)
+            else Lwt_utils_unix.remove_dir data_dir
           in
           Node_config_file.write args.config_file node_config
           >>=? fun () ->
