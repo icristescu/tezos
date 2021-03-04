@@ -29,7 +29,6 @@ type error +=
   | Missing_file_argument
   | Cannot_locate_file of string
   | Data_dir_not_found of {path : string}
-  | Inconsistent_snapshot_file of string
   | Cannot_read_info
 
 let () =
@@ -83,19 +82,6 @@ let () =
     Data_encoding.(obj1 (req "path" string))
     (function Data_dir_not_found {path} -> Some path | _ -> None)
     (fun path -> Data_dir_not_found {path}) ;
-  register_error_kind
-    `Permanent
-    ~id:"Snapshot.inconsistent_snapshot_file"
-    ~title:"Inconsistent snapshot file"
-    ~description:"Error while opening snapshot file"
-    ~pp:(fun ppf filename ->
-      Format.fprintf
-        ppf
-        "Failed to read snapshot file %s. The provided file is inconsistent."
-        filename)
-    Data_encoding.(obj1 (req "filename" string))
-    (function Inconsistent_snapshot_file s -> Some s | _ -> None)
-    (fun s -> Inconsistent_snapshot_file s) ;
   register_error_kind
     `Permanent
     ~id:"Snapshot.cannot_read_info"
