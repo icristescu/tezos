@@ -32,15 +32,12 @@ include Context_dump_intf
 
 type error +=
   | System_write_error of string
-  | Bad_hash of string * Bytes.t * Bytes.t
   | Context_not_found of Bytes.t
   | System_read_error of string
   | Inconsistent_snapshot_file
   | Inconsistent_snapshot_data
-  | Missing_snapshot_data
   | Invalid_snapshot_version of string * string list
   | Restore_context_failure
-  | Inconsistent_imported_block of Block_hash.t * Block_hash.t
 
 let () =
   let open Data_encoding in
@@ -54,25 +51,6 @@ let () =
     (obj1 (req "context_dump_no_space" string))
     (function System_write_error s -> Some s | _ -> None)
     (fun s -> System_write_error s) ;
-  register_error_kind
-    `Permanent
-    ~id:"context_dump.bad_hash"
-    ~title:"Bad hash"
-    ~description:"Wrong hash given"
-    ~pp:(fun ppf (ty, his, hshould) ->
-      Format.fprintf
-        ppf
-        "Wrong hash [%s] given: %s, should be %s"
-        ty
-        (Bytes.to_string his)
-        (Bytes.to_string hshould))
-    (obj3
-       (req "hash_ty" string)
-       (req "hash_is" bytes)
-       (req "hash_should" bytes))
-    (function
-      | Bad_hash (ty, his, hshould) -> Some (ty, his, hshould) | _ -> None)
-    (fun (ty, his, hshould) -> Bad_hash (ty, his, hshould)) ;
   register_error_kind
     `Permanent
     ~id:"context_dump.context_not_found"
@@ -121,18 +99,6 @@ let () =
     empty
     (function Inconsistent_snapshot_data -> Some () | _ -> None)
     (fun () -> Inconsistent_snapshot_data) ;
-  register_error_kind
-    `Permanent
-    ~id:"context_dump.missing_snapshot_data"
-    ~title:"Missing data in imported snapshot"
-    ~description:"Mandatory data missing while reaching end of snapshot file."
-    ~pp:(fun ppf () ->
-      Format.fprintf
-        ppf
-        "Mandatory data is missing is the provided snapshot file.")
-    empty
-    (function Missing_snapshot_data -> Some () | _ -> None)
-    (fun () -> Missing_snapshot_data) ;
   register_error_kind
     `Permanent
     ~id:"context_dump.invalid_snapshot_version"
