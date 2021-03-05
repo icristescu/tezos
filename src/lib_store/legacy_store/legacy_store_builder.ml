@@ -237,6 +237,8 @@ let run () =
         (* commit_genesis is done by [Legacy_state.init] *)
         | External_validation.Restore_context_integrity ->
             (* noop *) ok "noop"
+        | External_validation.Unload _ ->
+            (* noop *) ok "noop"
         | External_validation.Terminate ->
             ok "exiting" >>=? fun () -> exit 0
         | External_validation.Validate

@@ -45,6 +45,7 @@ type request =
       operations : Operation.t list list;
       max_operations_ttl : int;
     }
+  | Unload of {heads : Context_hash.t list; checkpoint : Context_hash.t}
   | Commit_genesis of {chain_id : Chain_id.t}
   | Fork_test_chain of {
       context_hash : Context_hash.t;
@@ -64,6 +65,14 @@ let request_pp ppf = function
         (Block_header.hash block_header)
         Chain_id.pp_short
         chain_id
+  | Unload {heads; checkpoint} ->
+      Format.fprintf
+        ppf
+        "unload context below %a for commits (%a)"
+        Context_hash.pp
+        checkpoint
+        (Format.pp_print_list Context_hash.pp)
+        heads
   | Commit_genesis {chain_id} ->
       Format.fprintf
         ppf
@@ -182,20 +191,21 @@ let request_encoding =
             });
       case
         (Tag 2)
-        ~title:"commit_genesis"
-        (obj1 (req "chain_id" Chain_id.encoding))
+        ~title:"unload"
+        (obj2
+           (req "heads" (list Context_hash.encoding))
+           (req "checkpoint" Context_hash.encoding))
         (function
-          | Commit_genesis {chain_id} ->
-              Some chain_id
-          | Init
-          | Validate _
-          | Fork_test_chain _
-          | Terminate
-          | Restore_context_integrity ->
-              None)
-        (fun chain_id -> Commit_genesis {chain_id});
+          | Unload {heads; checkpoint} -> Some (heads, checkpoint) | _ -> None)
+        (fun (heads, checkpoint) -> Unload {heads; checkpoint});
       case
         (Tag 3)
+        ~title:"commit_genesis"
+        (obj1 (req "chain_id" Chain_id.encoding))
+        (function Commit_genesis {chain_id} -> Some chain_id | _ -> None)
+        (fun chain_id -> Commit_genesis {chain_id});
+      case
+        (Tag 4)
         ~title:"fork_test_chain"
         (obj2
            (req "context_hash" Context_hash.encoding)
@@ -208,13 +218,13 @@ let request_encoding =
         (fun (context_hash, forked_header) ->
           Fork_test_chain {context_hash; forked_header});
       case
-        (Tag 4)
+        (Tag 5)
         ~title:"terminate"
         unit
         (function Terminate -> Some () | _ -> None)
         (fun () -> Terminate);
       case
-        (Tag 5)
+        (Tag 6)
         ~title:"restore_integrity"
         unit
         (function Restore_context_integrity -> Some () | _ -> None)

@@ -100,6 +100,13 @@ val validate :
   Operation.t list list ->
   unit tzresult Lwt.t
 
+val unload_context :
+  t ->
+  Store.chain_store ->
+  Context_hash.t list ->
+  Context_hash.t ->
+  unit tzresult Lwt.t
+
 val fetch_and_compile_protocol :
   t ->
   ?peer:P2p_peer.Id.t ->

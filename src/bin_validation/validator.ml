@@ -63,6 +63,15 @@ module Events = struct
       ~pp1:(fun fmt header -> Block_hash.pp fmt (Block_header.hash header))
       ("block", Block_header.encoding)
 
+  let unload_request =
+    declare_1
+      ~section
+      ~level:Debug
+      ~name:"unload_request"
+      ~msg:"unload context below {hash}"
+      ~pp1:Context_hash.pp
+      ("hash", Context_hash.encoding)
+
   let commit_genesis_request =
     declare_1
       ~section
@@ -223,6 +232,8 @@ let run input output =
           Events.(emit validation_request block_header)
           >>= fun () ->
           Error_monad.protect (fun () ->
+              Context.sync context_index
+              >>= fun () ->
               let pred_context_hash = predecessor_block_header.shell.context in
               Context.checkout context_index pred_context_hash
               >>= function
@@ -270,6 +281,18 @@ let run input output =
             res
         in
         validate >>= loop
+    | External_validation.Unload {heads; checkpoint} ->
+        let unload : unit Lwt.t =
+          Events.(emit unload_request checkpoint)
+          >>= fun () ->
+          Context.freeze context_index heads checkpoint
+          >>= fun () ->
+          External_validation.send
+            output
+            (Error_monad.result_encoding Data_encoding.empty)
+            (Ok ())
+        in
+        unload >>= loop
     | External_validation.Fork_test_chain {context_hash; forked_header} ->
         let fork_test_chain : unit Lwt.t =
           Events.(emit fork_test_chain_request forked_header)

@@ -50,6 +50,13 @@ module type S = sig
 
   val restore_context_integrity : t -> int option tzresult Lwt.t
 
+  val unload :
+    t ->
+    Store.chain_store ->
+    Context_hash.t list ->
+    Context_hash.t ->
+    unit tzresult Lwt.t
+
   val apply_block :
     t ->
     Store.chain_store ->
@@ -170,6 +177,12 @@ module Internal_validator_process = struct
         user_activated_upgrades;
         user_activated_protocol_overrides;
       }
+
+  let unload _validator chain_store heads checkpoint =
+    let context_index =
+      Store.context_index (Store.Chain.global_store chain_store)
+    in
+    Context.freeze context_index heads checkpoint >>= fun () -> return_unit
 
   let apply_block validator chain_store ~predecessor ~max_operations_ttl
       block_header operations =
@@ -516,6 +529,10 @@ module External_validator_process = struct
     send_request validator External_validation.Init Data_encoding.empty
     >>=? fun () -> return validator
 
+  let unload validator _chain_store heads checkpoint =
+    let request = External_validation.Unload {heads; checkpoint} in
+    send_request validator request Data_encoding.empty
+
   let apply_block validator chain_store ~predecessor ~max_operations_ttl
       block_header operations =
     let chain_id = Store.Chain.chain_id chain_store in
@@ -621,6 +638,9 @@ let close (E {validator_process = (module VP); validator}) = VP.close validator
 let restore_context_integrity (E {validator_process = (module VP); validator})
     =
   VP.restore_context_integrity validator
+
+let unload (E {validator_process = (module VP); validator}) =
+  VP.unload validator
 
 let apply_block (E {validator_process = (module VP); validator}) chain_store
     ~predecessor header operations =

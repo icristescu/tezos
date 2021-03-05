@@ -144,6 +144,7 @@ let on_request : type r. t -> r Request.t -> r tzresult Lwt.t =
                   >>=? fun pred ->
                   Worker.protect w (fun () ->
                       protect ?canceler (fun () ->
+                          Format.printf "LET APPLY ---- @." ;
                           Block_validator_process.apply_block
                             bv.validation_process
                             chain_store
@@ -293,6 +294,10 @@ let validate w ?canceler ?peer ?(notify_new_block = fun _ -> ()) chain_db hash
           return_unit
       | Ok (Validation_error errs) | Error errs ->
           Lwt.return_error errs )
+
+let unload_context w =
+  let bv = Worker.state w in
+  Block_validator_process.unload bv.validation_process
 
 let fetch_and_compile_protocol w =
   let bv = Worker.state w in

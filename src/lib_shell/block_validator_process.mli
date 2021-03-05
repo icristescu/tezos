@@ -62,6 +62,13 @@ val close : t -> unit Lwt.t
 
 val restore_context_integrity : t -> int option tzresult Lwt.t
 
+val unload :
+  t ->
+  Store.chain_store ->
+  Context_hash.t list ->
+  Context_hash.t ->
+  unit tzresult Lwt.t
+
 (** [apply_block bvp predecessor header os] checks the liveness of
     the operations and then call [Block_validation.apply] *)
 val apply_block :
