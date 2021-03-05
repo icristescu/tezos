@@ -93,6 +93,8 @@ val checkout_exn : index -> Context_hash.t -> context Lwt.t
 
 val hash : time:Time.Protocol.t -> ?message:string -> t -> Context_hash.t
 
+val freeze : index -> Context_hash.t list -> Context_hash.t -> unit Lwt.t
+
 val commit :
   time:Time.Protocol.t -> ?message:string -> context -> Context_hash.t Lwt.t
 

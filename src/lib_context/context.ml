@@ -226,11 +226,9 @@ let unshallow context =
               >|= fun _ -> ())
         children)
 
-let counter = ref 0
+(* let counter = ref 0 *)
 
 let count = ref 0
-
-let first = ref true
 
 let total = ref 0
 
@@ -296,8 +294,24 @@ let pp_stats () =
     !total ;
   total := 0
 
+let freeze index heads checkpoint =
+  pp_stats () ;
+  let to_commit ctxt_hash =
+    let hash = Hash.of_context_hash ctxt_hash in
+    Store.Commit.of_hash index.repo hash
+    >>= function None -> assert false | Some commit -> Lwt.return commit
+  in
+  List.map_s to_commit heads
+  >>= fun heads ->
+  to_commit checkpoint
+  >>= fun checkpoint ->
+  Store.freeze
+    ~copy_in_upper:true
+    ~max:heads
+    ~min_upper:[checkpoint]
+    index.repo
+
 let raw_commit ~time ?(message = "") context =
-  counter := succ !counter ;
   let info =
     Irmin.Info.v ~date:(Time.Protocol.to_seconds time) ~author:"Tezos" message
   in
@@ -307,20 +321,8 @@ let raw_commit ~time ?(message = "") context =
   Store.Commit.v context.index.repo ~info ~parents context.tree
   >>= fun h ->
   pp_commit_stats () ;
-  ( if !first then (
-    first := false ;
-    pp_stats () ;
-    Store.freeze ~max:[h] context.index.repo )
-  else Lwt.return_unit )
-  >>= fun () ->
-  ( if !counter = 4000 then (
-    counter := 0 ;
-    pp_stats () ;
-    Store.freeze ~max:[h] context.index.repo )
-  else Lwt.return_unit )
-  >|= fun () ->
   Store.Tree.clear context.tree ;
-  h
+  Lwt.return h
 
 let hash ~time ?(message = "") context =
   let info =
@@ -465,7 +467,7 @@ let add_predecessor_ops_metadata_hash v hash =
   raw_add v current_predecessor_ops_metadata_hash_key data
 
 (*-- Initialisation ----------------------------------------------------------*)
-let config ?readonly root =
+let config ?readonly ~with_lower root =
   let conf =
     Irmin_pack.config
       ?readonly
@@ -476,12 +478,12 @@ let config ?readonly root =
   Irmin_pack_layered.config
     ~conf
     ~copy_in_upper:true
-    ~with_lower:false
+    ~with_lower
     ~blocking_copy_size:1000000
     ()
 
 let init ?patch_context ?(readonly = false) root =
-  let config = config ~readonly root in
+  let config = config ~readonly ~with_lower:false root in
   let open_store () =
     Store.Repo.v config
     >>= fun repo ->
