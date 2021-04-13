@@ -115,6 +115,12 @@ let () =
     Logs.set_level (Some Logs.Debug) ;
     Logs.set_reporter (reporter ())
   in
+  let verbose_info () =
+    Logs.set_level (Some Logs.Info) ;
+    Logs.set_reporter (reporter ())
+  in
+  (* while testing the layered store, print stats and logs from irmin *)
+  verbose_info () ;
   let index_log_size n = index_log_size := Some (int_of_string n) in
   match Unix.getenv "TEZOS_STORAGE" with
   | exception Not_found ->
@@ -139,11 +145,7 @@ module Conf = struct
   let stable_hash = 256
 end
 
-module V1 = struct
-   let version = `V1
-end
-
-module Maker = Irmin_pack.Maker_ext (V1) (Conf) (Node) (Commit)
+module Maker = Irmin_pack_layered.Maker_ext (Conf) (Node) (Commit)
 module Store = Maker.Make (Metadata) (Contents) (Path) (Branch) (Hash)
 
 module P = Store.Private
@@ -151,7 +153,7 @@ module P = Store.Private
 module Checks = struct
   module Maker (V : Irmin_pack.Version.S) = struct
     module Maker = Irmin_pack.Maker_ext (V) (Conf) (Node) (Commit)
-     
+
     include
       Maker.Make (Irmin.Metadata.None) (Irmin.Contents.String) (Path)
         (Irmin.Branch.String)
@@ -192,19 +194,7 @@ let current_predecessor_block_metadata_hash_key =
 let current_predecessor_ops_metadata_hash_key =
   ["predecessor_ops_metadata_hash"]
 
-let restore_integrity ?ppf index =
-  match Store.integrity_check ?ppf ~auto_repair:true index.repo with
-  | Ok (`Fixed n) ->
-      Ok (Some n)
-  | Ok `No_error ->
-      Ok None
-  | Error (`Cannot_fix msg) ->
-      error (failure "%s" msg)
-  | Error (`Corrupted n) ->
-      error
-        (failure
-           "unable to fix the corrupted context: %d bad entries detected"
-           n)
+let restore_integrity ?ppf index = ignore ppf ; ignore index ; Ok None
 
 let sync index =
   if index.readonly then Store.sync index.repo ;
@@ -251,7 +241,14 @@ let unshallow context =
               >|= fun _ -> ())
         children)
 
+let pp_stats () =
+  Format.printf "%a Irmin stats: %t\n@." Time.System.pp_hum
+    (Systime_os.now ()) Irmin_layers.Stats.pp_latest
+
+let counter = ref 0
+
 let raw_commit ~time ?(message = "") context =
+  counter := succ !counter ;
   let info =
     Irmin.Info.v ~date:(Time.Protocol.to_seconds time) ~author:"Tezos" message
   in
@@ -259,7 +256,13 @@ let raw_commit ~time ?(message = "") context =
   unshallow context
   >>= fun () ->
   Store.Commit.v context.index.repo ~info ~parents context.tree
-  >|= fun h ->
+  >>= fun h ->
+  pp_stats ();
+  (if !counter = 2 then (
+      Format.printf "freeze\n@.";
+      Store.freeze ~min_upper:[h] ~max_upper:[h] context.index.repo )
+   else
+     Lwt.return_unit) >|= fun () ->
   Store.Tree.clear context.tree ;
   h
 
@@ -407,10 +410,36 @@ let add_predecessor_ops_metadata_hash v hash =
 
 (*-- Initialisation ----------------------------------------------------------*)
 
+let config ?readonly root =
+  let conf =
+    Irmin_pack.config
+      ?readonly
+      ?index_log_size:!index_log_size
+      ~freeze_throttle:`Cancel_existing
+      root
+  in
+  Irmin_pack_layered.config
+    ~conf
+    ~with_lower:false
+    ~blocking_copy_size:1000000
+    ()
+
 let init ?patch_context ?(readonly = false) root =
-  Store.Repo.v
-    (Irmin_pack.config ~readonly ?index_log_size:!index_log_size root)
-  >|= fun repo -> {path = root; repo; patch_context; readonly}
+  let config = config ~readonly root in
+  let open_store () =
+    Store.Repo.v config
+    >>= fun repo ->
+    let v = {path = root; repo; patch_context; readonly} in
+    Lwt.return v
+  in
+  Lwt.catch open_store (function
+      | Irmin_pack.Version.(Invalid { expected = `V2; found = `V1 }) ->
+          Logs.app (fun l -> l "Migrating store to v2, this may take a while") ;
+          Store.migrate config ;
+          Logs.app (fun l -> l "Migration ended, opening the store") ;
+          open_store ()
+      | exn ->
+          Lwt.fail exn)
 
 let close index = Store.Repo.close index.repo
 
