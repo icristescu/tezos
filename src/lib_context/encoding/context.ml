@@ -81,7 +81,14 @@ end = struct
   let hash = H.digesti_string
 end
 
-module Node = struct
+module Node
+       (Hash : Irmin.Hash.S) (Path : sig
+         type step
+
+         val step_t : step Irmin.Type.t
+       end)
+       (Metadata : Irmin.Metadata.S) =
+  struct
   module M = Irmin.Private.Node.Make (Hash) (Path) (Metadata)
 
   (* [V1] is only used to compute preimage hashes. [assert false]
@@ -128,9 +135,14 @@ module Node = struct
     let pre_hash_entries = Irmin.Type.(unstage (pre_hash entries_t))
 
     let compare_entry (x, _) (y, _) = String.compare x y
+    let step_to_string = Irmin.Type.(unstage (to_bin_string Path.step_t))
+    let str_key (k, v) = (step_to_string k, v)
 
     let pre_hash t =
-      M.list t |> List.fast_sort compare_entry |> pre_hash_entries
+         M.list t
+         |> List.map str_key
+         |> List.fast_sort compare_entry
+         |> pre_hash_entries
   end
 
   include M
@@ -138,16 +150,17 @@ module Node = struct
   let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> V1.pre_hash x))
 end
 
-module Commit = struct
-  module M = Irmin.Private.Commit.Make (Hash)
-  module V1 = Irmin.Private.Commit.V1 (M)
-  include M
+module Commit : Irmin.Private.Commit.Maker = struct
+   module Info = Irmin.Info.Default
+   module Make (Hash : Irmin.Type.S) = struct
+     module M = Irmin.Private.Commit.Make (Hash)
+     module V1 = Irmin.Private.Commit.V1.Make (M)
+     include M
 
-  let pre_hash_v1_t = Irmin.Type.(unstage (pre_hash V1.t))
-
-  let pre_hash_v1 t = pre_hash_v1_t (V1.import t)
-
-  let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
+     let pre_hash_v1_t = Irmin.Type.(unstage (pre_hash V1.t))
+     let pre_hash_v1 t = pre_hash_v1_t (V1.import t)
+     let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> pre_hash_v1 x))
+   end
 end
 
 module Contents = struct
