@@ -139,31 +139,24 @@ module Conf = struct
   let stable_hash = 256
 end
 
-module Store =
-  Irmin_pack.Make_ext
-    (struct
-      let io_version = `V1
-    end)
-    (Conf)
-    (Metadata)
-    (Contents)
-    (Path)
-    (Branch)
-    (Hash)
-    (Node)
-    (Commit)
+module V1 = struct
+   let version = `V1
+end
+
+module Maker = Irmin_pack.Maker_ext (V1) (Conf) (Node) (Commit)
+module Store = Maker.Make (Metadata) (Contents) (Path) (Branch) (Hash)
 
 module P = Store.Private
 
 module Checks = struct
-  module Maker (V : Irmin_pack.VERSION) =
-    Irmin_pack.Make_ext (V) (Conf) (Irmin.Metadata.None) (Contents)
-      (Irmin.Path.String_list)
-      (Irmin.Branch.String)
-      (Hash)
-      (Node)
-      (Commit)
-
+  module Maker (V : Irmin_pack.Version.S) = struct
+    module Maker = Irmin_pack.Maker_ext (V) (Conf) (Node) (Commit)
+     
+    include
+      Maker.Make (Irmin.Metadata.None) (Irmin.Contents.String) (Path)
+        (Irmin.Branch.String)
+        (Hash)
+  end
   module Pack : Irmin_pack.Checks.S = Irmin_pack.Checks.Make (Maker)
 
   module Index = struct

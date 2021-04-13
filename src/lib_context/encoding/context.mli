@@ -41,10 +41,6 @@ module Path : Irmin.Path.S with type step = string and type t = string list
 
 module Branch : Irmin.Branch.S with type t = string
 
-module Node :
-  Irmin.Private.Node.S
-    with type hash = Hash.t
-     and type step = string
-     and type metadata = unit
+module Node : Irmin.Private.Node.Maker
 
-module Commit : Irmin.Private.Commit.S with type hash = Hash.t
+module Commit : Irmin.Private.Commit.Maker
