@@ -52,7 +52,11 @@ let reporter () =
 let index_log_size = ref None
 
 let () =
-  let verbose () =
+  let verbose_info () =
+    Logs.set_level (Some Logs.Info) ;
+    Logs.set_reporter (reporter ())
+  in
+  let verbose_debug () =
     Logs.set_level (Some Logs.Debug) ;
     Logs.set_reporter (reporter ())
   in
@@ -64,8 +68,10 @@ let () =
       let args = String.split ',' v in
       List.iter
         (function
-          | "v" | "verbose" | "vv" ->
-              verbose ()
+          | "v" | "verbose" ->
+              verbose_info ()
+          | "vv" ->
+              verbose_debug ()
           | v -> (
             match String.split '=' v with
             | ["index-log-size"; n] ->
