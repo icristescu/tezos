@@ -119,7 +119,7 @@ module Term = struct
     >>=? fun root ->
     index_dir_exists root output
     >>=? fun () ->
-    Context.Checks.Pack.Reconstruct_index.run ~root ~output ;
+    Context.Checks.Pack.Reconstruct_index.run ~root ~output ();
     return_unit
 
   let to_context_hash chain_store (hash : Block_hash.t) =

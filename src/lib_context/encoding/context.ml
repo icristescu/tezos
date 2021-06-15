@@ -82,15 +82,14 @@ end = struct
   let hash = H.digesti_string
 end
 
-module Node : Irmin.Private.Node.Maker = struct
-  module Make
+module Node
        (Hash : Irmin.Hash.S) (Path : sig
          type step
 
          val step_t : step Irmin.Type.t
        end)
        (Metadata : Irmin.Metadata.S) =
-  struct
+struct
   module M = Irmin.Private.Node.Make (Hash) (Path) (Metadata)
 
   (* [V1] is only used to compute preimage hashes. [assert false]
@@ -150,7 +149,7 @@ module Node : Irmin.Private.Node.Maker = struct
   include M
 
   let t = Irmin.Type.(like t ~pre_hash:(stage @@ fun x -> V1.pre_hash x))
-end
+
 end
 
 module Commit : Irmin.Private.Commit.Maker = struct
