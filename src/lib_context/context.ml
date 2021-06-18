@@ -219,7 +219,7 @@ let checkout_exn index key =
 (* unshallow possible 1-st level objects from previous partial
    checkouts ; might be better to pass directly the list of shallow
    objects. *)
-let unshallow context =
+let _unshallow context =
   Store.Tree.list context.tree []
   >>= fun children ->
   P.Repo.batch context.index.repo (fun x y _ ->
@@ -282,8 +282,8 @@ let raw_commit' ~time ?(message = "") context =
     Store.Info.v (Time.Protocol.to_seconds time) ~author:"Tezos" ~message
   in
   let parents = List.map Store.Commit.hash context.parents in
-  unshallow context
-  >>= fun () ->
+  (* unshallow context *)
+  (* >>= fun () -> *)
   Store.Commit.v context.index.repo ~info ~parents context.tree
   >>= fun h ->
   Store.Tree.clear context.tree ;
