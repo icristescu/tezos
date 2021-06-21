@@ -12,7 +12,8 @@
             tezos-context.sigs
             tezos-context.helpers
             tezos-context.encoding
-            mtime mtime.clock.os)
+            mtime mtime.clock.os
+            rusage)
  (flags (:standard -open Tezos_shell_services
                    -open Tezos_base__TzPervasives
                    -open Tezos_stdlib_unix

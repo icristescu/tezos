@@ -289,13 +289,18 @@ let raw_commit' ~time ?(message = "") context =
   Store.Tree.clear context.tree ;
   Lwt.return h
 
+let get_maxrss () =
+  let usage = Rusage.(get Self) in
+  let ( / ) = Int64.div in
+  Int64.to_int (usage.maxrss / 1024L / 1024L)
+
 let raw_commit ~time ?message context =
   let t0 = Mtime_clock.counter () in
   raw_commit' ~time ?message context >>= fun h ->
   let duration =
       Mtime_clock.count t0 |> Mtime.Span.to_s
   in
-  Format.printf "[commit] %f\n%!" duration;
+  Format.printf "[commit] %f, maxrss = %d\n%!" duration (get_maxrss ());
   Lwt.return h
 
 let hash ~time ?(message = "") context =
@@ -568,7 +573,8 @@ let init ?patch_context ?(readonly = false) root =
       | exn ->
           Lwt.fail exn)
 
-let close index = Store.Repo.close index.repo
+let close index = 
+  Store.Repo.close index.repo
 
 let get_branch chain_id = Format.asprintf "%a" Chain_id.pp chain_id
 
