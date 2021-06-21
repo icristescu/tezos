@@ -557,6 +557,7 @@ let config ?readonly ~with_lower root =
   Irmin_pack_layered.config ~conf ~with_lower ~blocking_copy_size:1000000 ()
 
 let init ?patch_context ?(readonly = false) root =
+  if not readonly then (Memtrace.trace_if_requested ());
   let config = config ~readonly ~with_lower:true root in
   let open_store () =
     Store.Repo.v config
