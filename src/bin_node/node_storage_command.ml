@@ -46,6 +46,7 @@ module Term = struct
   type subcommand =
     | Stat_index
     | Stat_pack
+    | Stat_store
     | Integrity_check
     | Reconstruct_index
     | Integrity_check_inodes
@@ -107,7 +108,7 @@ module Term = struct
   let reconstruct_index config_file data_dir output =
     root config_file data_dir >>=? fun root ->
     index_dir_exists root output >>=? fun () ->
-    Context.Checks.Pack.Reconstruct_index.run ~root ~output ();
+    Context.Checks.Pack.Reconstruct_index.run ~root ~output () ;
     return_unit
 
   let to_context_hash chain_store (hash : Block_hash.t) =
@@ -144,12 +145,19 @@ module Term = struct
     Context.Checks.Pack.Integrity_check_inodes.run ~root ~heads:(Some [head])
     >>= fun () -> return_unit
 
+  let stat_store config_file data_dir block all_paths =
+    root config_file data_dir >>=? fun root ->
+    current_head config_file data_dir block >>=? fun head ->
+    Context.Checks.Pack.Stats_commit.run ~root ~commit:(Some head) ~all_paths ()
+    >>= fun () -> return_unit
+
   let dispatch_subcommand subcommand config_file data_dir auto_repair dest head
-      =
+      all_paths =
     let run =
       match subcommand with
       | Stat_index -> stat_index config_file data_dir
       | Stat_pack -> stat_pack config_file data_dir
+      | Stat_store -> stat_store config_file data_dir head all_paths
       | Integrity_check -> integrity_check config_file data_dir auto_repair
       | Reconstruct_index -> reconstruct_index config_file data_dir dest
       | Integrity_check_inodes ->
@@ -163,6 +171,7 @@ module Term = struct
     let parser = function
       | "stat-index" -> `Ok Stat_index
       | "stat-pack" -> `Ok Stat_pack
+      | "stat-store" -> `Ok Stat_store
       | "integrity-check" -> `Ok Integrity_check
       | "reconstruct-index" -> `Ok Reconstruct_index
       | "integrity-check-inodes" -> `Ok Integrity_check_inodes
@@ -170,6 +179,7 @@ module Term = struct
     and printer ppf = function
       | Stat_index -> Format.fprintf ppf "stat-index"
       | Stat_pack -> Format.fprintf ppf "stat-pack"
+      | Stat_store -> Format.fprintf ppf "stat-store"
       | Integrity_check -> Format.fprintf ppf "integrity-check"
       | Reconstruct_index -> Format.fprintf ppf "reconstruct-index"
       | Integrity_check_inodes -> Format.fprintf ppf "integrity-check-inodes"
@@ -206,15 +216,22 @@ module Term = struct
     value
     & opt (some string) None
       @@ info
-           ~doc:"Head; option for integrity-check-inodes"
+           ~doc:"Head; option for integrity-check-inodes and stat-store"
            ~docv:"HEAD"
            ["head"; "h"]
+
+  let all_paths =
+    let open Cmdliner.Arg in
+    value & opt (some string) None
+    & info
+        ["all_paths"]
+        ~doc:"Print all paths in the tree; option for stat-store"
 
   let term =
     Term.(
       ret
         (const dispatch_subcommand $ subcommand_arg $ config_file $ data_dir
-       $ auto_repair $ dest $ head))
+       $ auto_repair $ dest $ head $ all_paths))
 end
 
 module Manpage = struct
@@ -236,6 +253,7 @@ module Manpage = struct
         "$(b,integrity-check-inodes) search the store for corrupted inodes. If \
          no block hash is provided (through the $(b,--head) argument) then the \
          current head is chosen as the default context to start with.";
+      `P "$(b,stats-store) print statistics about the tree underlying a block.";
       `P
         "$(b,WARNING): this API is experimental and may change in future \
          versions.";
